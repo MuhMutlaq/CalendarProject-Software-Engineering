@@ -1,446 +1,172 @@
-"""
-OCR Date Detection System
-Detects and highlights dates in various formats using EasyOCR and OpenCV
-Supports PDF, PNG, and JPG files
-"""
-
-import cv2
-import numpy as np
-import easyocr
-import re
-from pathlib import Path
-import argparse
-from typing import List, Tuple, Dict, Optional
-import pdf2image
-from PIL import Image
+import requests
+import json
 import os
-import sys
+import base64
+import logging
+logging.basicConfig(level= logging.INFO)
+logger= logging.getLogger(__name__)
 
+class PromptChat(object):
+    """
+    Class to interact with Gemini Model for exam dates extraction.
+    Args:
+        api_key (str): API key for authentication.
+        url_endpoint (str): URL endpoint for the Gemini Model.
+    """
 
-class DateOCRDetector:
-    """OCR system for detecting and highlighting dates in documents"""
-    
-    def __init__(self, languages: List[str] = ['en'], gpu: bool = True):
-        """
-        Initialize the Date OCR Detector
-        
-        Args:
-            languages: List of language codes for EasyOCR
-            gpu: Whether to use GPU acceleration
-        """
-        self.reader = easyocr.Reader(languages, gpu=gpu)
-        
-        # Date regex patterns - handles various formats
-        self.date_patterns = [
-            # MM/DD/YYYY, DD/MM/YYYY, MM/DD/YY, DD/MM/YY
-            r'\b\d{1,2}/\d{1,2}/\d{2,4}\b',
-            
-            # MM-DD-YYYY, DD-MM-YYYY, MM-DD-YY, DD-MM-YY
-            r'\b\d{1,2}-\d{1,2}-\d{2,4}\b',
-            
-            # YYYY/MM/DD, YYYY-MM-DD
-            r'\b\d{4}/\d{1,2}/\d{1,2}\b',
-            r'\b\d{4}-\d{1,2}-\d{1,2}\b',
-            
-            # Month DD, YYYY or DD Month YYYY
-            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{2,4}\b',
-            r'\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{2,4}\b',
-            
-            # Full month names
-            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{2,4}\b',
-            r'\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{2,4}\b',
-        ]
-        
-        # Compile regex patterns for efficiency
-        self.compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.date_patterns]
-    
-    def pdf_to_images(self, pdf_path: str, dpi: int = 300) -> List[np.ndarray]:
-        """
-        Convert PDF pages to images
-        
-        Args:
-            pdf_path: Path to PDF file
-            dpi: Resolution for conversion
-            
-        Returns:
-            List of images as numpy arrays
-        """
-        try:
-            # Convert PDF to PIL Images
-            pil_images = pdf2image.convert_from_path(pdf_path, dpi=dpi)
-            
-            # Convert PIL Images to numpy arrays
-            images = []
-            for pil_image in pil_images:
-                # Convert PIL Image to numpy array
-                image_array = np.array(pil_image)
-                # Convert RGB to BGR for OpenCV
-                if len(image_array.shape) == 3 and image_array.shape[2] == 3:
-                    image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-                images.append(image_array)
-            
-            return images
-        except Exception as e:
-            print(f"Error converting PDF to images: {e}")
-            return []
-    
-    def load_image(self, file_path: str) -> Optional[np.ndarray]:
-        """
-        Load an image from file
-        
-        Args:
-            file_path: Path to image file
-            
-        Returns:
-            Image as numpy array or None if failed
-        """
-        try:
-            # Check file extension
-            extension = Path(file_path).suffix.lower()
-            
-            if extension == '.pdf':
-                # For PDF, return the first page for now
-                images = self.pdf_to_images(file_path)
-                return images[0] if images else None
-            elif extension in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']:
-                # Load image using OpenCV
-                image = cv2.imread(file_path)
-                return image
-            else:
-                print(f"Unsupported file format: {extension}")
-                return None
-        except Exception as e:
-            print(f"Error loading image: {e}")
-            return None
-    
-    def detect_text(self, image: np.ndarray) -> List[Tuple]:
-        """
-        Detect text in image using EasyOCR
-        
-        Args:
-            image: Input image as numpy array
-            
-        Returns:
-            List of text detections (bbox, text, confidence)
-        """
-        try:
-            # Run EasyOCR
-            results = self.reader.readtext(image)
-            return results
-        except Exception as e:
-            print(f"Error detecting text: {e}")
-            return []
-    
-    def is_date(self, text: str) -> bool:
-        """
-        Check if text contains a date pattern
-        
-        Args:
-            text: Text to check
-            
-        Returns:
-            True if text matches date pattern
-        """
-        for pattern in self.compiled_patterns:
-            if pattern.search(text):
-                return True
-        return False
-    
-    def find_date_regions(self, ocr_results: List[Tuple]) -> List[Dict]:
-        """
-        Find text regions containing dates
-        
-        Args:
-            ocr_results: Results from EasyOCR
-            
-        Returns:
-            List of date regions with bounding boxes and text
-        """
-        date_regions = []
-        
-        for bbox, text, confidence in ocr_results:
-            # Check if text contains a date
-            if self.is_date(text):
-                # Extract bounding box coordinates
-                points = np.array(bbox, dtype=np.int32)
-                x_min = min(points[:, 0])
-                y_min = min(points[:, 1])
-                x_max = max(points[:, 0])
-                y_max = max(points[:, 1])
-                
-                date_regions.append({
-                    'bbox': (x_min, y_min, x_max, y_max),
-                    'points': points,
-                    'text': text,
-                    'confidence': confidence
-                })
-        
-        return date_regions
-    
-    def draw_date_boxes(self, image: np.ndarray, date_regions: List[Dict], 
-                       box_color: Tuple[int, int, int] = (0, 255, 0),
-                       text_color: Tuple[int, int, int] = (0, 0, 255),
-                       thickness: int = 2) -> np.ndarray:
-        """
-        Draw bounding boxes around detected dates
-        
-        Args:
-            image: Input image
-            date_regions: List of date regions to highlight
-            box_color: Color for bounding boxes (BGR)
-            text_color: Color for text labels (BGR)
-            thickness: Line thickness
-            
-        Returns:
-            Image with drawn boxes
-        """
-        # Create a copy to avoid modifying original
-        result_image = image.copy()
-        
-        for region in date_regions:
-            x_min, y_min, x_max, y_max = region['bbox']
-            
-            # Draw rectangle around date
-            cv2.rectangle(result_image, (x_min, y_min), (x_max, y_max), 
-                         box_color, thickness)
-            
-            # Add "Date" label above the box
-            label = "Date"
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.6
-            font_thickness = 2
-            
-            # Get text size for background
-            (text_width, text_height), baseline = cv2.getTextSize(
-                label, font, font_scale, font_thickness
-            )
-            
-            # Draw background rectangle for label
-            label_y = y_min - 5 if y_min > 30 else y_max + text_height + 5
-            cv2.rectangle(result_image, 
-                         (x_min, label_y - text_height - 5),
-                         (x_min + text_width + 10, label_y + 5),
-                         box_color, -1)
-            
-            # Draw label text
-            cv2.putText(result_image, label,
-                       (x_min + 5, label_y),
-                       font, font_scale, (255, 255, 255), font_thickness)
-            
-            # Optionally add the detected text below
-            detected_text = f"{region['text'][:30]}..." if len(region['text']) > 30 else region['text']
-            cv2.putText(result_image, detected_text,
-                       (x_min, y_max + 20),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
-        
-        return result_image
-    
-    def process_file(self, file_path: str, output_dir: str = None, 
-                    show_result: bool = False) -> Dict:
-        """
-        Process a single file to detect and highlight dates
-        
-        Args:
-            file_path: Path to input file
-            output_dir: Directory to save results
-            show_result: Whether to display result
-            
-        Returns:
-            Dictionary with processing results
-        """
-        results = {
-            'file': file_path,
-            'status': 'failed',
-            'dates_found': [],
-            'output_files': []
+    def __init__(self, api_key: str, url_endpoint: str):
+        self.API_KEY= api_key
+        self.URL= url_endpoint
+        self.headers= {
+            "Content-Type": "application/json",
+            "X-goog-api-key": self.API_KEY
         }
-        
-        print(f"\nProcessing: {file_path}")
-        
-        # Check if file is PDF
-        if Path(file_path).suffix.lower() == '.pdf':
-            images = self.pdf_to_images(file_path)
-            if not images:
-                print("Failed to convert PDF")
-                return results
-        else:
-            image = self.load_image(file_path)
-            if image is None:
-                print("Failed to load image")
-                return results
-            images = [image]
-        
-        # Process each image/page
-        all_dates = []
-        for page_num, image in enumerate(images, 1):
-            print(f"Processing page {page_num}/{len(images)}...")
-            
-            # Detect text
-            ocr_results = self.detect_text(image)
-            print(f"Found {len(ocr_results)} text regions")
-            
-            # Find date regions
-            date_regions = self.find_date_regions(ocr_results)
-            print(f"Found {len(date_regions)} date regions")
-            
-            # Store dates
-            for region in date_regions:
-                all_dates.append({
-                    'page': page_num,
-                    'text': region['text'],
-                    'confidence': region['confidence']
-                })
-            
-            # Draw boxes
-            result_image = self.draw_date_boxes(image, date_regions)
-            
-            # Save output
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
-                base_name = Path(file_path).stem
-                if len(images) > 1:
-                    output_path = os.path.join(output_dir, f"{base_name}_page{page_num}_dates.png")
-                else:
-                    output_path = os.path.join(output_dir, f"{base_name}_dates.png")
-                
-                cv2.imwrite(output_path, result_image)
-                results['output_files'].append(output_path)
-                print(f"Saved result to: {output_path}")
-            
-            # Show result if requested
-            if show_result:
-                # Resize for display if too large
-                height, width = result_image.shape[:2]
-                if width > 1200:
-                    scale = 1200 / width
-                    new_width = int(width * scale)
-                    new_height = int(height * scale)
-                    display_image = cv2.resize(result_image, (new_width, new_height))
-                else:
-                    display_image = result_image
-                
-                cv2.imshow(f'Detected Dates - Page {page_num}', display_image)
-                cv2.waitKey(0)
-        
-        # Update results
-        results['status'] = 'success'
-        results['dates_found'] = all_dates
-        
-        # Close windows if opened
-        if show_result:
-            cv2.destroyAllWindows()
-        
-        return results
-    
-    def process_directory(self, directory: str, output_dir: str = None,
-                         extensions: List[str] = None) -> List[Dict]:
+        self.response= None
+
+    def get_content(self, page: str, is_image: bool = False, image_path: str = None) -> str:
         """
-        Process all supported files in a directory
-        
+        Get exam dates from Gemini Model based on the provided content.
+        Extracts ALL events from the document without filtering.
         Args:
-            directory: Input directory path
-            output_dir: Output directory for results
-            extensions: File extensions to process
-            
+            page (str): The text content or marker for image file.
+            is_image (bool): Whether the input is an image file.
+            image_path (str): Path to the image file if is_image is True.
         Returns:
-            List of processing results
+            str: All exam dates from the Gemini Model in JSON format.
         """
-        if extensions is None:
-            extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
-        
-        all_results = []
-        
-        # Find all files with supported extensions
-        for ext in extensions:
-            for file_path in Path(directory).glob(f'*{ext}'):
-                result = self.process_file(str(file_path), output_dir)
-                all_results.append(result)
-        
-        return all_results
 
-def main():
-    """Main function to run the Date OCR Detector"""
-    parser = argparse.ArgumentParser(description='OCR Date Detection System')
-    parser.add_argument('input', help='Input file or directory path')
-    parser.add_argument('-o', '--output', default='./backend/output_dates', 
-                       help='Output directory for results (default: output_dates)')
-    parser.add_argument('-s', '--show', action='store_true',
-                       help='Show detection results')
-    parser.add_argument('--gpu', action='store_true',
-                       help='Use GPU for OCR (if available)')
-    parser.add_argument('-l', '--languages', nargs='+', default=['en'],
-                       help='Languages for OCR (default: en)')
-    
-    args = parser.parse_args()
-    
-    # Create detector
-    print(f"Initializing Date OCR Detector...")
-    print(f"Languages: {args.languages}")
-    print(f"GPU: {args.gpu}")
-    
-    detector = DateOCRDetector(languages=args.languages, gpu=args.gpu)
-    
-    # Process input
-    input_path = Path(args.input)
-    
-    if input_path.is_file():
-        # Process single file
-        results = detector.process_file(str(input_path), args.output, args.show)
-        
-        # Print summary
-        print("\n" + "="*50)
-        print("DETECTION SUMMARY")
-        print("="*50)
-        print(f"File: {results['file']}")
-        print(f"Status: {results['status']}")
-        print(f"Total dates found: {len(results['dates_found'])}")
-        
-        if results['dates_found']:
-            print("\nDetected dates:")
-            for date_info in results['dates_found']:
-                print(f"  Page {date_info['page']}: {date_info['text']} "
-                     f"(confidence: {date_info['confidence']:.2f})")
-        
-        if results['output_files']:
-            print(f"\nOutput saved to:")
-            for output_file in results['output_files']:
-                print(f"  {output_file}")
-    
-    elif input_path.is_dir():
-        # Process directory
-        results = detector.process_directory(str(input_path), args.output)
-        
-        # Print summary
-        print("\n" + "="*50)
-        print("BATCH PROCESSING SUMMARY")
-        print("="*50)
-        print(f"Total files processed: {len(results)}")
-        
-        successful = sum(1 for r in results if r['status'] == 'success')
-        total_dates = sum(len(r['dates_found']) for r in results)
-        
-        print(f"Successful: {successful}")
-        print(f"Failed: {len(results) - successful}")
-        print(f"Total dates found: {total_dates}")
-        
-        # Detailed results
-        print("\nDetailed results:")
-        for result in results:
-            print(f"\n  {Path(result['file']).name}:")
-            print(f"    Status: {result['status']}")
-            print(f"    Dates found: {len(result['dates_found'])}")
-            if result['dates_found']:
-                for date_info in result['dates_found'][:3]:  # Show first 3
-                    print(f"      - {date_info['text']}")
-                if len(result['dates_found']) > 3:
-                    print(f"      ... and {len(result['dates_found']) - 3} more")
-    else:
-        print(f"Error: {input_path} is neither a file nor a directory")
-        return 1
-    
-    print("\nProcessing complete!")
-    return 0
+        logger.info("Preparing prompt for event extraction (extracting ALL events).")
 
+        base_prompt = """You are an exam schedule extraction assistant. Extract ALL exam information from this schedule.
 
-if __name__ == "__main__":
-    sys.exit(main())
+Extract these columns for EVERY exam in the schedule:
+- Date: The exam date (keep the original format from the document, e.g., "2025/01/15" or "15/01/2025")
+- Time: The exam time (keep the original format, e.g., "9:00 to 12:00" or "9:00-12:00")
+- Major-Level: The student level (e.g., "1", "2", "3", "4")
+- Offered To: The major this exam is for (e.g., "AI", "CIS", "CS", "CYS", "SE", "All")
+- Course Code: The course code (e.g., "CS201", "MATH101")
+- Course Name: The full course name (e.g., "Data Structures", "Calculus I")
+
+Return the result ONLY as a JSON array with this exact structure:
+[
+    {
+        "Date": "2025/01/15",
+        "Time": "9:00 to 12:00",
+        "Major-Level": "2",
+        "Offered To": "CS",
+        "Course Code": "CS201",
+        "Course Name": "Data Structures"
+    },
+    {
+        "Date": "2025/01/16",
+        "Time": "14:00 to 17:00",
+        "Major-Level": "1",
+        "Offered To": "All",
+        "Course Code": "MATH101",
+        "Course Name": "Calculus I"
+    }
+]
+
+CRITICAL RULES:
+1. Return ONLY valid JSON - no markdown, no explanations, no code blocks
+2. Extract EVERY exam from the schedule - do not skip any
+3. If "Offered To" shows multiple majors (e.g., "CS, SE"), keep it as is
+4. If a field is missing or unclear, use an empty string ""
+5. Ensure all date and time formats match the source document exactly"""
+
+        # Prepare the request data
+        data = {"contents": [{"parts": []}]}
+
+        if is_image and image_path and os.path.exists(image_path):
+            # For image files, encode as base64 and send with vision
+            logger.info(f"Processing image file: {image_path}")
+            with open(image_path, "rb") as image_file:
+                image_data = base64.b64encode(image_file.read()).decode('utf-8')
+
+            # Determine mime type
+            mime_type = "image/jpeg"
+            if image_path.lower().endswith('.png'):
+                mime_type = "image/png"
+            elif image_path.lower().endswith(('.jpg', '.jpeg')):
+                mime_type = "image/jpeg"
+            elif image_path.lower().endswith('.gif'):
+                mime_type = "image/gif"
+            elif image_path.lower().endswith('.bmp'):
+                mime_type = "image/bmp"
+
+            # Add image and text prompt
+            data["contents"][0]["parts"] = [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": image_data
+                    }
+                },
+                {
+                    "text": base_prompt
+                }
+            ]
+        else:
+            # For text content (from PDFs), include the text in the prompt
+            logger.info("Processing text content.")
+            full_prompt = f"""{base_prompt}
+
+Here is the exam schedule content:
+
+{page}"""
+            data["contents"][0]["parts"] = [
+                {
+                    "text": full_prompt
+                }
+            ]
+
+        logger.info("Prompt prepared successfully.")
+        return self._get_response(data)
+    
+    def _get_response(self, data: dict):
+        """
+        Internal method to send request to Gemini Model and retrieve the response.
+        Args:
+            data (dict): The request data containing the prompt and/or image.
+        Returns:
+            str: The exam dates in JSON format from the Gemini Model.
+        """
+
+        logger.info("Sending request to Gemini model for event extraction.")
+        response= requests.post(self.URL, headers= self.headers, data= json.dumps(data))
+
+        if response.status_code != 200:
+            logger.error(f"Request failed with status code {response.status_code}: {response.text}")
+            raise Exception(f"Request failed with status code {response.status_code}: {response.text}")
+
+        logger.info("Response received successfully from Gemini model.")
+        json_response= response.json()
+
+        # Extract text content from the response
+        try:
+            self.response= json_response["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error parsing response: {e}")
+            logger.error(f"Response structure: {json.dumps(json_response, indent=2)}")
+            raise Exception(f"Failed to parse Gemini response: {str(e)}")
+
+        # Automatically save response to backend folder
+        backend_folder = os.path.dirname(os.path.abspath(__file__))
+        response_path = os.path.join(backend_folder, "Response.json")
+        self.save_response(response_path)
+
+        return self.response
+    
+    def save_response(self, filename: str = "Response.json"):
+        """
+        Save exam dates response to a file.
+        Args:
+            filename (str): The name of the file to save the response. Defaults to "Response.json".
+        """
+        
+        logger.info(f"Saving exam dates to ({filename}).")
+        with open(filename, "w", encoding= "utf-8") as f:
+            f.write(self.response)
+        
+        if os.path.exists(filename):
+            logger.info(f"Exam dates saved successfully to ({filename}).")

@@ -48,6 +48,17 @@ export default function AutoEventExtractorModal({
   const [editDescription, setEditDescription] = useState("");
   const [editDate, setEditDate] = useState("");
 
+  // User input fields for AI extraction
+  const [userMajorLevel, setUserMajorLevel] = useState<string>("");
+  const [userOfferedTo, setUserOfferedTo] = useState<string>("");
+  const [showUserInputs, setShowUserInputs] = useState(true);
+
+  // File selection state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFileUri, setSelectedFileUri] = useState<string>("");
+  const [selectedFileName, setSelectedFileName] = useState<string>("");
+  const [fileSelected, setFileSelected] = useState(false);
+
   // Backend URL - Update this with your actual backend URL
   // For local development: http://localhost:5000 (for web)
   // For iOS simulator: http://localhost:5000
@@ -85,7 +96,13 @@ export default function AutoEventExtractorModal({
         } as any);
       }
 
+      // Add user inputs for AI extraction (always send, even if empty)
+      formData.append("major_level", userMajorLevel || "");
+      formData.append("offered_to", userOfferedTo || "");
+
       console.log("Sending to backend:", `${BACKEND_URL}/extract-events`);
+      console.log("User inputs - Major Level:", userMajorLevel || "empty", "Offered To:", userOfferedTo || "empty");
+
       const response = await fetch(`${BACKEND_URL}/extract-events`, {
         method: "POST",
         body: formData,
@@ -189,20 +206,15 @@ export default function AutoEventExtractorModal({
   // Handler for web drag-and-drop
   const handleWebFileSelected = async (file: File) => {
     console.log("File dropped:", file.name, file.type, file.size);
-    setIsUploading(true);
-    try {
-      await uploadFileToBackend(URL.createObjectURL(file), file.name, file);
-    } catch (error) {
-      console.error("Upload error:", error);
-      Alert.alert("Error", "Failed to upload file. Please try again.");
-    } finally {
-      setIsUploading(false);
-    }
+
+    // Just select the file, don't upload yet
+    setSelectedFile(file);
+    setSelectedFileUri(URL.createObjectURL(file));
+    setSelectedFileName(file.name);
+    setFileSelected(true);
   };
 
   const handleFileUpload = async () => {
-    setIsUploading(true);
-
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
@@ -210,23 +222,21 @@ export default function AutoEventExtractorModal({
       });
 
       if (result.canceled) {
-        setIsUploading(false);
         return;
       }
 
       const file = result.assets[0];
-      await uploadFileToBackend(file.uri, file.name);
+      // Just select the file, don't upload yet
+      setSelectedFileUri(file.uri);
+      setSelectedFileName(file.name);
+      setFileSelected(true);
     } catch (error) {
-      console.error("Upload error:", error);
-      Alert.alert("Error", "Failed to upload file. Please try again.");
-    } finally {
-      setIsUploading(false);
+      console.error("File selection error:", error);
+      Alert.alert("Error", "Failed to select file. Please try again.");
     }
   };
 
   const handlePhotoUpload = async () => {
-    setIsUploading(true);
-
     try {
       // Request media library permission
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -236,7 +246,6 @@ export default function AutoEventExtractorModal({
           "Permission Required",
           "Photo library permission is required to select images."
         );
-        setIsUploading(false);
         return;
       }
 
@@ -248,18 +257,37 @@ export default function AutoEventExtractorModal({
       });
 
       if (result.canceled) {
-        setIsUploading(false);
         return;
       }
 
       const image = result.assets[0];
       const fileName = `photo_${Date.now()}.jpg`;
-      await uploadFileToBackend(image.uri, fileName);
+      // Just select the file, don't upload yet
+      setSelectedFileUri(image.uri);
+      setSelectedFileName(fileName);
+      setFileSelected(true);
     } catch (error) {
-      console.error("Upload error:", error);
-      Alert.alert("Error", "Failed to upload photo. Please try again.");
+      console.error("Photo selection error:", error);
+      Alert.alert("Error", "Failed to select photo. Please try again.");
+    }
+  };
+
+  // New handler for submit button
+  const handleSubmit = async () => {
+    if (!fileSelected || !selectedFileName) {
+      Alert.alert("Error", "Please select a file first.");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      await uploadFileToBackend(selectedFileUri, selectedFileName, selectedFile || undefined);
+    } catch (error) {
+      console.error("Submit error:", error);
+      Alert.alert("Error", "Failed to process file. Please try again.");
     } finally {
-      setIsUploading(false);
+      setIsProcessing(false);
     }
   };
 
@@ -365,6 +393,13 @@ export default function AutoEventExtractorModal({
     setEditDate("");
     setIsProcessing(false);
     setIsUploading(false);
+    setUserMajorLevel("");
+    setUserOfferedTo("");
+    setShowUserInputs(true);
+    setSelectedFile(null);
+    setSelectedFileUri("");
+    setSelectedFileName("");
+    setFileSelected(false);
     onClose();
   };
 
@@ -401,32 +436,94 @@ export default function AutoEventExtractorModal({
               <View style={styles.uploadSection}>
                 <Text style={styles.instructionText}>
                   {Platform.OS === "web"
-                    ? "Drag & drop a PDF or image here, or click below to upload"
-                    : "Upload a photo or file to automatically extract event dates"}
+                    ? "Step 1: Drag & drop a PDF or image, or click below to select"
+                    : "Step 1: Select a photo or file to extract event dates"}
                 </Text>
 
-                <TouchableOpacity
-                  style={styles.uploadButton}
-                  onPress={handlePhotoUpload}
-                  disabled={isUploading}
-                >
-                  <Text style={styles.uploadButtonIcon}>📷</Text>
-                  <Text style={styles.uploadButtonText}>Upload Photo</Text>
-                </TouchableOpacity>
+                {/* File Selection Buttons */}
+                {!fileSelected && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.uploadButton}
+                      onPress={handlePhotoUpload}
+                    >
+                      <Text style={styles.uploadButtonIcon}>📷</Text>
+                      <Text style={styles.uploadButtonText}>Select Photo</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.uploadButton, styles.uploadButtonSecondary]}
-                  onPress={handleFileUpload}
-                  disabled={isUploading}
-                >
-                  <Text style={styles.uploadButtonIcon}>📄</Text>
-                  <Text style={styles.uploadButtonText}>Upload File</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.uploadButton, styles.uploadButtonSecondary]}
+                      onPress={handleFileUpload}
+                    >
+                      <Text style={styles.uploadButtonIcon}>📄</Text>
+                      <Text style={styles.uploadButtonText}>Select File</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
 
-                {isUploading && (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#007AFF" />
-                    <Text style={styles.loadingText}>Uploading...</Text>
+                {/* Show selected file */}
+                {fileSelected && (
+                  <View style={styles.selectedFileSection}>
+                    <Text style={styles.selectedFileTitle}>✅ File Selected:</Text>
+                    <Text style={styles.selectedFileName}>{selectedFileName}</Text>
+                    <TouchableOpacity
+                      style={styles.changeFileButton}
+                      onPress={() => {
+                        setFileSelected(false);
+                        setSelectedFile(null);
+                        setSelectedFileUri("");
+                        setSelectedFileName("");
+                      }}
+                    >
+                      <Text style={styles.changeFileButtonText}>Change File</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* User Input Fields for AI Extraction */}
+                {fileSelected && showUserInputs && (
+                  <View style={styles.userInputSection}>
+                    <Text style={styles.instructionText}>
+                      Step 2: Provide your info (optional) and submit
+                    </Text>
+                    <Text style={styles.userInputTitle}>
+                      📚 Your Information (Optional)
+                    </Text>
+                    <Text style={styles.userInputSubtitle}>
+                      Provide your major info to filter relevant courses, or leave empty to extract everything from the file
+                    </Text>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Major Level (Optional)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={userMajorLevel}
+                        onChangeText={setUserMajorLevel}
+                        placeholder="e.g., 1, 2, 3, or 4 (leave empty for all)"
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Offered To - Your Major (Optional)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={userOfferedTo}
+                        onChangeText={setUserOfferedTo}
+                        placeholder="e.g., Computer Science (leave empty for all)"
+                      />
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                      style={styles.submitButton}
+                      onPress={handleSubmit}
+                      disabled={isProcessing}
+                    >
+                      <Text style={styles.submitButtonText}>
+                        {isProcessing ? "Processing..." : "🚀 Submit & Extract Events"}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -833,6 +930,88 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveAllButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  userInputSection: {
+    backgroundColor: "#f0f8ff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+  },
+  userInputTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  userInputSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 16,
+  },
+  inputGroup: {
+    marginBottom: 12,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+  },
+  selectedFileSection: {
+    backgroundColor: "#e8f5e9",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#34C759",
+    alignItems: "center",
+  },
+  selectedFileTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#34C759",
+    marginBottom: 8,
+  },
+  selectedFileName: {
+    fontSize: 14,
+    color: "#333",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  changeFileButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#34C759",
+  },
+  changeFileButtonText: {
+    color: "#34C759",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  submitButton: {
+    backgroundColor: "#FF9500",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  submitButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",

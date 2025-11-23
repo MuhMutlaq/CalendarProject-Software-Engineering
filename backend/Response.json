@@ -1,0 +1,460 @@
+```json
+[
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "ALL",
+    "Course Code": "CSC331",
+    "Course Name": "Operating Systems"
+  },
+  {
+    "Date": "",
+    "Time": "12:00 to 2:00",
+    "Major-Level": "7",
+    "Offered To": "ALL",
+    "Course Code": "CS322",
+    "Course Name": "Operating Systems"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "3",
+    "Offered To": "AI/CS",
+    "Course Code": "PHYS205(4Y)+PHYS212",
+    "Course Name": "Physics"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "3",
+    "Offered To": "CIS",
+    "Course Code": "MGMT 209 + MGMT320",
+    "Course Name": "Principles of Management"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "3",
+    "Offered To": "CYS",
+    "Course Code": "CYS 209",
+    "Course Name": "Information Security Management"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "5",
+    "Offered To": "CS",
+    "Course Code": "MATH306",
+    "Course Name": "Logic Proof & Technique"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "CS",
+    "Course Code": "MATH401",
+    "Course Name": "Logic Proof & Technique"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "CYS",
+    "Course Code": "CYS 402",
+    "Course Name": "Mathematical Foundations of Information Security"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "5",
+    "Offered To": "CYS",
+    "Course Code": "CYS 301",
+    "Course Name": "Mathematical Foundations of Information Security"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "AI/CS/ CYS7 (AI) 9 (CS)\n9(CYS)",
+    "Course Code": "ARTI 401",
+    "Course Name": "AI Principles and Techniques"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "5",
+    "Offered To": "CIS",
+    "Course Code": "CIS 308",
+    "Course Name": "Information Technology Project Management"
+  },
+  {
+    "Date": "",
+    "Time": "9 : 0 0 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "CIS",
+    "Course Code": "CIS 414",
+    "Course Name": "IT Project Management"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "3",
+    "Offered To": "ALL",
+    "Course Code": "STAT238(4Y) + STAT 207 (5Y)",
+    "Course Name": "Intro to Stat and Prob"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "9",
+    "Offered To": "CIS",
+    "Course Code": "CIS 512",
+    "Course Name": "Software Qulaity Assurance"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "9",
+    "Offered To": "AI",
+    "Course Code": "ARTI 501",
+    "Course Name": "NLP"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "5",
+    "Offered To": "AI/CS",
+    "Course Code": "MATH 304 (4Y)",
+    "Course Name": "Linear Algebra"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "AI/CS",
+    "Course Code": "MATH 402 (5Y)",
+    "Course Name": "Linear Algebra"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "CYS",
+    "Course Code": "CYS 401",
+    "Course Name": "Fundamentals of Cybersecurity"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "9",
+    "Offered To": "CS",
+    "Course Code": "CS526",
+    "Course Name": "Mobile App Programming"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "9",
+    "Offered To": "CYS",
+    "Course Code": "CYS 503",
+    "Course Name": "Introduction to Reverse Engineering"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "7",
+    "Offered To": "CIS",
+    "Course Code": "CIS 417",
+    "Course Name": "System Analysis and Design"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "5",
+    "Offered To": "CIS",
+    "Course Code": "CIS 302",
+    "Course Name": "System Analysis and Design"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "3",
+    "Offered To": "ALL",
+    "Course Code": "CSC231+ CS311",
+    "Course Name": "Object Oriented Programming (1)"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "AI/CS",
+    "Course Code": "CSE 302 (4Y)",
+    "Course Name": "Computer Organization"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "7",
+    "Offered To": "AI/CS",
+    "Course Code": "CS 414 (5Y)",
+    "Course Name": "Computer Organization"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "AI/CS",
+    "Course Code": "ARTI 503",
+    "Course Name": "Parallel Computer Architecture"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "CIS",
+    "Course Code": "CIS 424",
+    "Course Name": "Information Systems Managements"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "CYS",
+    "Course Code": "CYS 502",
+    "Course Name": "Network Security"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5+7",
+    "Offered To": "CS/AI",
+    "Course Code": "CSC305(4Y)+CS411(5Y)",
+    "Course Name": "Software Engineering"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "3",
+    "Offered To": "CS/CIS/CYS/AI",
+    "Course Code": "CYS 233(4Y)+CIS 315 (5Y)",
+    "Course Name": "Fundamentals of Communications and Networking"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "CYS",
+    "Course Code": "CYS 305",
+    "Course Name": "Programming for Cybersecurity"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "7",
+    "Offered To": "CIS",
+    "Course Code": "MGMT 410(5Y)+MGMT 210(4Y)",
+    "Course Name": "Fundamentals of Business"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "CS/CIS",
+    "Course Code": "CIS 517",
+    "Course Name": "Data Mining and Warehousing"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "CYS",
+    "Course Code": "CYS 504",
+    "Course Name": "Operating Systems Security"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "AI",
+    "Course Code": "ARTI 504",
+    "Course Name": "Knowledge Representation and Reasoning"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "AI",
+    "Course Code": "ARTI303(4Y)+ARTI 402 (5Y)",
+    "Course Name": "Programming for AI"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "3",
+    "Offered To": "CS/CIS/CYS/AI",
+    "Course Code": "ENGL 234 + CIS313",
+    "Course Name": "Technical Reports"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "7",
+    "Offered To": "CIS",
+    "Course Code": "CIS 416",
+    "Course Name": "Data & Information Management"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "CIS",
+    "Course Code": "CIS 306",
+    "Course Name": "Data and Information Management"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "7",
+    "Offered To": "CYS",
+    "Course Code": "CYS 404",
+    "Course Name": "Digital Forensics Techniques and tools"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "CYS",
+    "Course Code": "CYS 302",
+    "Course Name": "Digital Forensics Techniques and tools"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "7",
+    "Offered To": "CS/AI/CYS",
+    "Course Code": "CS412",
+    "Course Name": "Algorithm Analysis & Design"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "5",
+    "Offered To": "CIS/CYS",
+    "Course Code": "CIS 304 + CIS 326",
+    "Course Name": "Information Technology Infrastructure Management"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "Minor in AI",
+    "Course Code": "ARTI 308",
+    "Course Name": "Machine Learning"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "AI",
+    "Course Code": "ARTI 502",
+    "Course Name": "Deep Learning"
+  },
+  {
+    "Date": "",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "9",
+    "Offered To": "CIS",
+    "Course Code": "MGMT 513",
+    "Course Name": "Business Strategy"
+  },
+  {
+    "Date": "23/12/2025",
+    "Time": "9:00 to 11:30",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "28/12/2025",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "29/12/2025",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "30/12/2025",
+    "Time": "12:00 to 2:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "31/12/2025",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "4/1/2026",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "1/1/2026",
+    "Time": "12:00 to 2:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "25/12/2025",
+    "Time": "12:00 to 2:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "21/12/2025",
+    "Time": "12:00 to 2:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "24/12/2025",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  },
+  {
+    "Date": "22/12/2025",
+    "Time": "9:00 to 11:00",
+    "Major-Level": "",
+    "Offered To": "",
+    "Course Code": "",
+    "Course Name": ""
+  }
+]
+```
