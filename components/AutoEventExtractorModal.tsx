@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   Modal,
   View,
@@ -15,12 +15,21 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import DragDropUpload from "./DragDropUpload";
 
+// =============================================================================
+// TYPES
+// =============================================================================
+
 export interface ExtractedEvent {
   id: string;
   date: string;
+  time?: string;
   title: string;
   description: string;
-  confidence?: number; // Optional: AI confidence score
+  course_code?: string;
+  course_name?: string;
+  major_level?: string;
+  offered_to?: string;
+  confidence?: number;
 }
 
 interface AutoEventExtractorModalProps {
@@ -29,66 +38,81 @@ interface AutoEventExtractorModalProps {
   onSaveEvents: (events: Omit<ExtractedEvent, "id">[]) => Promise<void>;
 }
 
+// =============================================================================
+// COMPONENT
+// =============================================================================
+
 export default function AutoEventExtractorModal({
   visible,
   onClose,
   onSaveEvents,
 }: AutoEventExtractorModalProps) {
-  const [isUploading, setIsUploading] = useState(false);
+  // File state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFileUri, setSelectedFileUri] = useState<string>("");
+  const [selectedFileName, setSelectedFileName] = useState<string>("");
+  const [fileSelected, setFileSelected] = useState(false);
+
+  // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
-  const [allEvents, setAllEvents] = useState<ExtractedEvent[]>([]); // Store all events before filtering
+  const [processingStage, setProcessingStage] = useState<string>("");
+
+  // Events state - Two stage approach
+  const [allExtractedEvents, setAllExtractedEvents] = useState<ExtractedEvent[]>([]);
+  const [filteredEvents, setFilteredEvents] = useState<ExtractedEvent[]>([]);
+  const [displayedEvents, setDisplayedEvents] = useState<ExtractedEvent[]>([]);
+
+  // Available filter options (extracted from document)
   const [availableMajors, setAvailableMajors] = useState<string[]>([]);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
-  const [selectedMajor, setSelectedMajor] = useState<string>("All");
-  const [selectedLevel, setSelectedLevel] = useState<string>("All");
+
+  // User input filters
+  const [userMajorLevel, setUserMajorLevel] = useState<string>("");
+  const [userOfferedTo, setUserOfferedTo] = useState<string>("");
+
+  // UI state
+  const [showUserInputs, setShowUserInputs] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editDate, setEditDate] = useState("");
 
-  // User input fields for AI extraction
-  const [userMajorLevel, setUserMajorLevel] = useState<string>("");
-  const [userOfferedTo, setUserOfferedTo] = useState<string>("");
-  const [showUserInputs, setShowUserInputs] = useState(true);
-
-  // File selection state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedFileUri, setSelectedFileUri] = useState<string>("");
-  const [selectedFileName, setSelectedFileName] = useState<string>("");
-  const [fileSelected, setFileSelected] = useState(false);
-
-  // Backend URL - Update this with your actual backend URL
-  // For local development: http://localhost:5000 (for web)
-  // For iOS simulator: http://localhost:5000
-  // For Android emulator: http://10.0.2.2:5000
-  // For physical device: http://YOUR_COMPUTER_IP:5000
+  // Backend URL configuration
   const BACKEND_URL = Platform.select({
     android: "http://10.0.2.2:5000",
     ios: "http://localhost:5000",
     default: "http://localhost:5000",
   });
 
-  const uploadFileToBackend = async (fileUri: string, fileName: string, fileBlob?: Blob) => {
-    console.log("Starting upload:", fileName, "Blob:", !!fileBlob);
+  // =============================================================================
+  // BACKEND API FUNCTIONS
+  // =============================================================================
+
+  /**
+   * Stage 1 & 2: Extract and filter events from backend
+   * Backend handles both extraction and filtering in one call
+   */
+  const extractAndFilterEvents = async (
+    fileUri: string,
+    fileName: string,
+    fileBlob?: Blob
+  ): Promise<void> => {
     setIsProcessing(true);
+    setProcessingStage("Uploading file...");
 
     try {
       const formData = new FormData();
 
-      // Create file blob for upload
+      // Prepare file for upload
       const fileType = fileName.split(".").pop()?.toLowerCase();
-      const mimeType = fileType === "pdf"
-        ? "application/pdf"
-        : `image/${fileType}`;
+      const mimeType = fileType === "pdf" ? "application/pdf" : `image/${fileType}`;
 
       if (fileBlob) {
-        // Web: Use the File object directly
-        console.log("Appending file to FormData:", fileName, mimeType);
+        // Web: Use File object directly
         formData.append("file", fileBlob, fileName);
       } else {
-        // Mobile: Use the URI
+        // Mobile: Use URI
         formData.append("file", {
           uri: fileUri,
           name: fileName,
@@ -96,118 +120,137 @@ export default function AutoEventExtractorModal({
         } as any);
       }
 
-      // Add user inputs for AI extraction (always send, even if empty)
-      formData.append("major_level", userMajorLevel || "");
-      formData.append("offered_to", userOfferedTo || "");
+      // Add filter parameters (even if empty - backend will return all if empty)
+      formData.append("major_level", userMajorLevel.trim() || "");
+      formData.append("offered_to", userOfferedTo.trim() || "");
 
-      console.log("Sending to backend:", `${BACKEND_URL}/extract-events`);
-      console.log("User inputs - Major Level:", userMajorLevel || "empty", "Offered To:", userOfferedTo || "empty");
+      console.log("🚀 Sending to backend:", `${BACKEND_URL}/extract-events`);
+      console.log("📋 Filters - Level:", userMajorLevel || "all", "Major:", userOfferedTo || "all");
+
+      setProcessingStage("Extracting events with AI...");
 
       const response = await fetch(`${BACKEND_URL}/extract-events`, {
         method: "POST",
         body: formData,
-        headers: Platform.OS === "web" ? {} : {
-          "Content-Type": "multipart/form-data",
-        },
+        headers: Platform.OS === "web" ? {} : { "Content-Type": "multipart/form-data" },
       });
 
-      console.log("Response status:", response.status);
-
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Server error ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
-      console.log("Backend response:", data);
+      console.log("✅ Backend response:", data);
 
       if (data.success && data.events && data.events.length > 0) {
-        // Convert backend events to our format
+        setProcessingStage("Processing results...");
+
+        // Convert to our event format with unique IDs
         const events: ExtractedEvent[] = data.events.map(
           (event: any, index: number) => ({
-            id: `temp-${Date.now()}-${index}`,
-            date: event.date,
-            title: event.title || "Untitled Event",
+            id: `event-${Date.now()}-${index}`,
+            date: event.date || "",
+            time: event.time || "",
+            title: event.title || event.course_code || "Event",
             description: event.description || "",
-            confidence: event.confidence || 0.7,
+            course_code: event.course_code || "",
+            course_name: event.course_name || "",
+            major_level: event.major_level || "",
+            offered_to: event.offered_to || "",
+            confidence: event.confidence || 0.9,
           })
         );
 
-        console.log("Extracted events:", events);
+        // Update state
+        setAllExtractedEvents(events);
+        setFilteredEvents(events);
+        setDisplayedEvents(events);
 
-        // Store all events
-        setAllEvents(events);
-        setExtractedEvents(events);
+        // Extract available filter options from events
+        const majors = new Set<string>();
+        const levels = new Set<string>();
 
-        // Set available majors and levels from backend
-        if (data.majors && data.majors.length > 0) {
-          setAvailableMajors(data.majors);
-          setShowFilters(true);
-        }
-        if (data.levels && data.levels.length > 0) {
-          setAvailableLevels(data.levels);
-        }
+        events.forEach((event) => {
+          if (event.offered_to) {
+            const offered = event.offered_to.toUpperCase();
+            if (offered.includes(",")) {
+              offered.split(",").forEach((m) => majors.add(m.trim()));
+            } else if (offered !== "ALL") {
+              majors.add(offered);
+            }
+          }
+          if (event.major_level) {
+            levels.add(event.major_level);
+          }
+        });
 
-        // Reset filters
-        setSelectedMajor("All");
-        setSelectedLevel("All");
+        setAvailableMajors(Array.from(majors).sort());
+        setAvailableLevels(Array.from(levels).sort());
+        setShowFilters(majors.size > 0 || levels.size > 0);
+
+        console.log(`✅ Extracted ${data.total_extracted} events, ${events.length} after filter`);
       } else {
-        console.log("No events found in response");
-        Alert.alert(
+        showAlert(
           "No Events Found",
-          "Could not extract any dates from the file. Please try another file."
+          "Could not extract any events from the file. Please try a different file or check if the document contains exam schedule data."
         );
       }
     } catch (error) {
-      console.error("Backend error:", error);
-      Alert.alert(
-        "Error",
-        "Failed to process file. Make sure the Python backend is running."
+      console.error("❌ Backend error:", error);
+      showAlert(
+        "Processing Error",
+        `Failed to process file: ${error instanceof Error ? error.message : "Unknown error"}\n\nMake sure the Python backend is running on ${BACKEND_URL}`
       );
     } finally {
       setIsProcessing(false);
+      setProcessingStage("");
     }
   };
 
-  // Apply filters to events
-  const applyFilters = (major: string, level: string) => {
-    let filtered = [...allEvents];
+  /**
+   * Client-side filtering of already extracted events
+   */
+  const applyClientSideFilter = useCallback(
+    (level: string, major: string) => {
+      if (allExtractedEvents.length === 0) return;
 
-    if (major !== "All") {
-      filtered = filtered.filter(
-        (event) =>
-          event.description &&
-          event.description.toLowerCase().includes(`major: ${major.toLowerCase()}`)
-      );
-    }
+      let filtered = [...allExtractedEvents];
 
-    if (level !== "All") {
-      filtered = filtered.filter(
-        (event) =>
-          event.description &&
-          event.description.toLowerCase().includes(`level: ${level.toLowerCase()}`)
-      );
-    }
+      // Filter by level
+      if (level && level !== "All") {
+        filtered = filtered.filter((event) => {
+          const eventLevel = (event.major_level || "").trim();
+          return eventLevel === level || eventLevel === "";
+        });
+      }
 
-    setExtractedEvents(filtered);
-  };
+      // Filter by major
+      if (major && major !== "All") {
+        const majorUpper = major.toUpperCase();
+        filtered = filtered.filter((event) => {
+          const offered = (event.offered_to || "").toUpperCase();
+          if (offered === "" || offered === "ALL") return true;
+          if (offered.includes(",")) {
+            return offered.split(",").some((m) => m.trim() === majorUpper);
+          }
+          return offered === majorUpper || offered.includes(majorUpper);
+        });
+      }
 
-  // Handler for major filter change
-  const handleMajorChange = (major: string) => {
-    setSelectedMajor(major);
-    applyFilters(major, selectedLevel);
-  };
+      setFilteredEvents(filtered);
+      setDisplayedEvents(filtered);
+      console.log(`🔍 Client filter: ${allExtractedEvents.length} -> ${filtered.length} events`);
+    },
+    [allExtractedEvents]
+  );
 
-  // Handler for level filter change
-  const handleLevelChange = (level: string) => {
-    setSelectedLevel(level);
-    applyFilters(selectedMajor, level);
-  };
+  // =============================================================================
+  // FILE HANDLING
+  // =============================================================================
 
-  // Handler for web drag-and-drop
   const handleWebFileSelected = async (file: File) => {
-    console.log("File dropped:", file.name, file.type, file.size);
-
-    // Just select the file, don't upload yet
+    console.log("📁 File dropped:", file.name, file.type, file.size);
     setSelectedFile(file);
     setSelectedFileUri(URL.createObjectURL(file));
     setSelectedFileName(file.name);
@@ -221,75 +264,97 @@ export default function AutoEventExtractorModal({
         copyToCacheDirectory: true,
       });
 
-      if (result.canceled) {
-        return;
-      }
+      if (result.canceled) return;
 
       const file = result.assets[0];
-      // Just select the file, don't upload yet
       setSelectedFileUri(file.uri);
       setSelectedFileName(file.name);
       setFileSelected(true);
     } catch (error) {
       console.error("File selection error:", error);
-      Alert.alert("Error", "Failed to select file. Please try again.");
+      showAlert("Error", "Failed to select file. Please try again.");
     }
   };
 
   const handlePhotoUpload = async () => {
     try {
-      // Request media library permission
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permissionResult.granted) {
-        Alert.alert(
-          "Permission Required",
-          "Photo library permission is required to select images."
-        );
+        showAlert("Permission Required", "Photo library permission is needed to select images.");
         return;
       }
 
-      // Launch image library picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 1,
       });
 
-      if (result.canceled) {
-        return;
-      }
+      if (result.canceled) return;
 
       const image = result.assets[0];
       const fileName = `photo_${Date.now()}.jpg`;
-      // Just select the file, don't upload yet
       setSelectedFileUri(image.uri);
       setSelectedFileName(fileName);
       setFileSelected(true);
     } catch (error) {
       console.error("Photo selection error:", error);
-      Alert.alert("Error", "Failed to select photo. Please try again.");
+      showAlert("Error", "Failed to select photo. Please try again.");
     }
   };
 
-  // New handler for submit button
+  const handleCameraCapture = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permissionResult.granted) {
+        showAlert("Permission Required", "Camera permission is needed to take photos.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (result.canceled) return;
+
+      const image = result.assets[0];
+      const fileName = `camera_${Date.now()}.jpg`;
+      setSelectedFileUri(image.uri);
+      setSelectedFileName(fileName);
+      setFileSelected(true);
+    } catch (error) {
+      console.error("Camera error:", error);
+      showAlert("Error", "Failed to capture photo. Please try again.");
+    }
+  };
+
   const handleSubmit = async () => {
     if (!fileSelected || !selectedFileName) {
-      Alert.alert("Error", "Please select a file first.");
+      showAlert("Error", "Please select a file first.");
       return;
     }
 
-    setIsProcessing(true);
-
-    try {
-      await uploadFileToBackend(selectedFileUri, selectedFileName, selectedFile || undefined);
-    } catch (error) {
-      console.error("Submit error:", error);
-      Alert.alert("Error", "Failed to process file. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
+    await extractAndFilterEvents(
+      selectedFileUri,
+      selectedFileName,
+      selectedFile || undefined
+    );
   };
+
+  const clearFileSelection = () => {
+    setFileSelected(false);
+    setSelectedFile(null);
+    setSelectedFileUri("");
+    setSelectedFileName("");
+  };
+
+  // =============================================================================
+  // EVENT EDITING
+  // =============================================================================
 
   const handleEditEvent = (event: ExtractedEvent) => {
     setEditingEventId(event.id);
@@ -301,18 +366,16 @@ export default function AutoEventExtractorModal({
   const handleSaveEdit = () => {
     if (!editingEventId) return;
 
-    setExtractedEvents((prev) =>
-      prev.map((event) =>
+    const updateEvents = (events: ExtractedEvent[]) =>
+      events.map((event) =>
         event.id === editingEventId
-          ? {
-              ...event,
-              title: editTitle,
-              description: editDescription,
-              date: editDate,
-            }
+          ? { ...event, title: editTitle, description: editDescription, date: editDate }
           : event
-      )
-    );
+      );
+
+    setAllExtractedEvents((prev) => updateEvents(prev));
+    setFilteredEvents((prev) => updateEvents(prev));
+    setDisplayedEvents((prev) => updateEvents(prev));
 
     setEditingEventId(null);
     setEditTitle("");
@@ -328,90 +391,105 @@ export default function AutoEventExtractorModal({
   };
 
   const handleDeleteEvent = (eventId: string) => {
+    const confirmDelete = () => {
+      const removeEvent = (events: ExtractedEvent[]) =>
+        events.filter((event) => event.id !== eventId);
+
+      setAllExtractedEvents((prev) => removeEvent(prev));
+      setFilteredEvents((prev) => removeEvent(prev));
+      setDisplayedEvents((prev) => removeEvent(prev));
+    };
+
     if (Platform.OS === "web") {
-      // Web: Use native confirm dialog
       if (window.confirm("Are you sure you want to delete this event?")) {
-        setExtractedEvents((prev) =>
-          prev.filter((event) => event.id !== eventId)
-        );
+        confirmDelete();
       }
     } else {
-      // Mobile: Use React Native Alert
       Alert.alert("Delete Event", "Are you sure you want to delete this event?", [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            setExtractedEvents((prev) =>
-              prev.filter((event) => event.id !== eventId)
-            );
-          },
-        },
+        { text: "Delete", style: "destructive", onPress: confirmDelete },
       ]);
     }
   };
 
+  // =============================================================================
+  // SAVE & CLOSE
+  // =============================================================================
+
   const handleSaveAllEvents = async () => {
+    if (displayedEvents.length === 0) {
+      showAlert("No Events", "There are no events to save.");
+      return;
+    }
+
     try {
-      const eventsToSave = extractedEvents.map(({ id, ...event }) => event);
+      const eventsToSave = displayedEvents.map(({ id, ...event }) => event);
       await onSaveEvents(eventsToSave);
 
-      if (Platform.OS === "web") {
-        // Web: Show alert and close immediately
-        alert(`Success! ${extractedEvents.length} event(s) added to your calendar!`);
-        handleClose();
-      } else {
-        // Mobile: Use React Native Alert
-        Alert.alert(
-          "Success",
-          `${extractedEvents.length} event(s) added to your calendar!`,
-          [{ text: "OK", onPress: handleClose }]
-        );
-      }
+      showAlert(
+        "Success",
+        `${displayedEvents.length} event(s) added to your calendar!`,
+        handleClose
+      );
     } catch (error) {
       console.error("Save error:", error);
-      if (Platform.OS === "web") {
-        alert("Error: Failed to save events. Please try again.");
-      } else {
-        Alert.alert("Error", "Failed to save events. Please try again.");
-      }
+      showAlert("Error", "Failed to save events. Please try again.");
     }
   };
 
   const handleClose = () => {
-    setExtractedEvents([]);
-    setAllEvents([]);
+    // Reset all state
+    setAllExtractedEvents([]);
+    setFilteredEvents([]);
+    setDisplayedEvents([]);
     setAvailableMajors([]);
     setAvailableLevels([]);
-    setSelectedMajor("All");
-    setSelectedLevel("All");
     setShowFilters(false);
     setEditingEventId(null);
     setEditTitle("");
     setEditDescription("");
     setEditDate("");
     setIsProcessing(false);
-    setIsUploading(false);
+    setProcessingStage("");
     setUserMajorLevel("");
     setUserOfferedTo("");
     setShowUserInputs(true);
-    setSelectedFile(null);
-    setSelectedFileUri("");
-    setSelectedFileName("");
-    setFileSelected(false);
+    clearFileSelection();
     onClose();
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+  // =============================================================================
+  // UTILITIES
+  // =============================================================================
+
+  const showAlert = (title: string, message: string, onOk?: () => void) => {
+    if (Platform.OS === "web") {
+      alert(`${title}\n\n${message}`);
+      onOk?.();
+    } else {
+      Alert.alert(title, message, [{ text: "OK", onPress: onOk }]);
+    }
   };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "No date";
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      return date.toLocaleDateString("en-US", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // =============================================================================
+  // RENDER
+  // =============================================================================
 
   return (
     <Modal visible={visible} animationType="slide" transparent={true}>
@@ -423,255 +501,326 @@ export default function AutoEventExtractorModal({
           <View style={styles.modalContainer}>
             {/* Header */}
             <View style={styles.header}>
-              <Text style={styles.title}>🤖 Auto Add Events</Text>
+              <Text style={styles.title}>🤖 Auto Extract Events</Text>
               <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </TouchableOpacity>
             </View>
 
             {/* Content */}
-            <ScrollView style={styles.content}>
-            {/* Upload Section */}
-            {extractedEvents.length === 0 && !isProcessing && (
-              <View style={styles.uploadSection}>
-                <Text style={styles.instructionText}>
-                  {Platform.OS === "web"
-                    ? "Step 1: Drag & drop a PDF or image, or click below to select"
-                    : "Step 1: Select a photo or file to extract event dates"}
-                </Text>
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              {/* ============ UPLOAD SECTION ============ */}
+              {displayedEvents.length === 0 && !isProcessing && (
+                <View style={styles.uploadSection}>
+                  {/* Step 1: File Selection */}
+                  <View style={styles.stepContainer}>
+                    <Text style={styles.stepTitle}>Step 1: Select File</Text>
+                    <Text style={styles.stepDescription}>
+                      {Platform.OS === "web"
+                        ? "Drag & drop a PDF/image or click to select"
+                        : "Choose a photo or document with exam schedule"}
+                    </Text>
 
-                {/* File Selection Buttons */}
-                {!fileSelected && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.uploadButton}
-                      onPress={handlePhotoUpload}
-                    >
-                      <Text style={styles.uploadButtonIcon}>📷</Text>
-                      <Text style={styles.uploadButtonText}>Select Photo</Text>
-                    </TouchableOpacity>
+                    {!fileSelected ? (
+                      <View style={styles.uploadButtons}>
+                        {Platform.OS !== "web" && (
+                          <TouchableOpacity
+                            style={styles.uploadButton}
+                            onPress={handleCameraCapture}
+                          >
+                            <Text style={styles.uploadButtonIcon}>📷</Text>
+                            <Text style={styles.uploadButtonText}>Take Photo</Text>
+                          </TouchableOpacity>
+                        )}
 
-                    <TouchableOpacity
-                      style={[styles.uploadButton, styles.uploadButtonSecondary]}
-                      onPress={handleFileUpload}
-                    >
-                      <Text style={styles.uploadButtonIcon}>📄</Text>
-                      <Text style={styles.uploadButtonText}>Select File</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                        <TouchableOpacity
+                          style={[styles.uploadButton, styles.uploadButtonSecondary]}
+                          onPress={handlePhotoUpload}
+                        >
+                          <Text style={styles.uploadButtonIcon}>🖼️</Text>
+                          <Text style={styles.uploadButtonText}>Select Photo</Text>
+                        </TouchableOpacity>
 
-                {/* Show selected file */}
-                {fileSelected && (
-                  <View style={styles.selectedFileSection}>
-                    <Text style={styles.selectedFileTitle}>✅ File Selected:</Text>
-                    <Text style={styles.selectedFileName}>{selectedFileName}</Text>
+                        <TouchableOpacity
+                          style={[styles.uploadButton, styles.uploadButtonTertiary]}
+                          onPress={handleFileUpload}
+                        >
+                          <Text style={styles.uploadButtonIcon}>📄</Text>
+                          <Text style={styles.uploadButtonText}>Select PDF/File</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.selectedFileSection}>
+                        <Text style={styles.selectedFileIcon}>✅</Text>
+                        <Text style={styles.selectedFileTitle}>File Selected</Text>
+                        <Text style={styles.selectedFileName}>{selectedFileName}</Text>
+                        <TouchableOpacity
+                          style={styles.changeFileButton}
+                          onPress={clearFileSelection}
+                        >
+                          <Text style={styles.changeFileButtonText}>Change File</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Step 2: Filter Options (Optional) */}
+                  {fileSelected && (
+                    <View style={styles.stepContainer}>
+                      <Text style={styles.stepTitle}>Step 2: Your Info (Optional)</Text>
+                      <Text style={styles.stepDescription}>
+                        Filter to show only your relevant exams, or leave empty for all
+                      </Text>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Your Level (1-4)</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={userMajorLevel}
+                          onChangeText={setUserMajorLevel}
+                          placeholder="e.g., 1, 2, 3, or 4"
+                          keyboardType="number-pad"
+                          maxLength={1}
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Your Major</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={userOfferedTo}
+                          onChangeText={setUserOfferedTo}
+                          placeholder="e.g., CS, SE, AI, CIS, CYS"
+                          autoCapitalize="characters"
+                        />
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.submitButton}
+                        onPress={handleSubmit}
+                        disabled={isProcessing}
+                      >
+                        <Text style={styles.submitButtonText}>
+                          🚀 Extract Events
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* ============ PROCESSING INDICATOR ============ */}
+              {isProcessing && (
+                <View style={styles.processingContainer}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={styles.processingText}>
+                    {processingStage || "Processing..."}
+                  </Text>
+                  <Text style={styles.processingSubtext}>
+                    AI is analyzing your document
+                  </Text>
+                </View>
+              )}
+
+              {/* ============ RESULTS SECTION ============ */}
+              {displayedEvents.length > 0 && !isProcessing && (
+                <View style={styles.eventsSection}>
+                  {/* Results Header */}
+                  <View style={styles.resultsHeader}>
+                    <Text style={styles.sectionTitle}>
+                      📋 Found {displayedEvents.length} Event(s)
+                    </Text>
+                    {allExtractedEvents.length !== displayedEvents.length && (
+                      <Text style={styles.filterNote}>
+                        (filtered from {allExtractedEvents.length} total)
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Quick Filters */}
+                  {showFilters && (
+                    <View style={styles.quickFilters}>
+                      <Text style={styles.quickFilterLabel}>Quick Filter:</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <TouchableOpacity
+                          style={[
+                            styles.filterChip,
+                            !userMajorLevel && !userOfferedTo && styles.filterChipActive,
+                          ]}
+                          onPress={() => {
+                            setUserMajorLevel("");
+                            setUserOfferedTo("");
+                            setDisplayedEvents(allExtractedEvents);
+                          }}
+                        >
+                          <Text style={styles.filterChipText}>All</Text>
+                        </TouchableOpacity>
+                        {availableLevels.map((level) => (
+                          <TouchableOpacity
+                            key={`level-${level}`}
+                            style={[
+                              styles.filterChip,
+                              userMajorLevel === level && styles.filterChipActive,
+                            ]}
+                            onPress={() => {
+                              setUserMajorLevel(level);
+                              applyClientSideFilter(level, userOfferedTo);
+                            }}
+                          >
+                            <Text style={styles.filterChipText}>Level {level}</Text>
+                          </TouchableOpacity>
+                        ))}
+                        {availableMajors.map((major) => (
+                          <TouchableOpacity
+                            key={`major-${major}`}
+                            style={[
+                              styles.filterChip,
+                              userOfferedTo.toUpperCase() === major && styles.filterChipActive,
+                            ]}
+                            onPress={() => {
+                              setUserOfferedTo(major);
+                              applyClientSideFilter(userMajorLevel, major);
+                            }}
+                          >
+                            <Text style={styles.filterChipText}>{major}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Event Cards */}
+                  {displayedEvents.map((event) => (
+                    <View key={event.id} style={styles.eventCard}>
+                      {editingEventId === event.id ? (
+                        /* Edit Mode */
+                        <View style={styles.editContainer}>
+                          <Text style={styles.editLabel}>Title</Text>
+                          <TextInput
+                            style={styles.editInput}
+                            value={editTitle}
+                            onChangeText={setEditTitle}
+                            placeholder="Event title"
+                          />
+
+                          <Text style={styles.editLabel}>Description</Text>
+                          <TextInput
+                            style={[styles.editInput, styles.editInputMultiline]}
+                            value={editDescription}
+                            onChangeText={setEditDescription}
+                            placeholder="Event description"
+                            multiline
+                            numberOfLines={3}
+                          />
+
+                          <Text style={styles.editLabel}>Date (YYYY-MM-DD)</Text>
+                          <TextInput
+                            style={styles.editInput}
+                            value={editDate}
+                            onChangeText={setEditDate}
+                            placeholder="2025-01-15"
+                          />
+
+                          <View style={styles.editActions}>
+                            <TouchableOpacity
+                              style={styles.cancelButton}
+                              onPress={handleCancelEdit}
+                            >
+                              <Text style={styles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.saveEditButton}
+                              onPress={handleSaveEdit}
+                            >
+                              <Text style={styles.saveEditButtonText}>Save</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : (
+                        /* View Mode */
+                        <>
+                          <View style={styles.eventHeader}>
+                            <View style={styles.eventHeaderLeft}>
+                              <Text style={styles.eventTitle}>{event.title}</Text>
+                              {event.confidence && (
+                                <View style={styles.confidenceBadge}>
+                                  <Text style={styles.confidenceText}>
+                                    {Math.round(event.confidence * 100)}% confident
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+
+                          <Text style={styles.eventDate}>
+                            📅 {formatDate(event.date)}
+                            {event.time && ` • ⏰ ${event.time}`}
+                          </Text>
+
+                          {event.description && (
+                            <Text style={styles.eventDescription}>
+                              {event.description}
+                            </Text>
+                          )}
+
+                          <View style={styles.eventActions}>
+                            <TouchableOpacity
+                              style={styles.editButton}
+                              onPress={() => handleEditEvent(event)}
+                            >
+                              <Text style={styles.editButtonText}>✏️ Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.deleteButton}
+                              onPress={() => handleDeleteEvent(event.id)}
+                            >
+                              <Text style={styles.deleteButtonText}>🗑️ Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  ))}
+
+                  {/* Bottom Actions */}
+                  <View style={styles.bottomActions}>
                     <TouchableOpacity
-                      style={styles.changeFileButton}
+                      style={styles.addMoreButton}
                       onPress={() => {
-                        setFileSelected(false);
-                        setSelectedFile(null);
-                        setSelectedFileUri("");
-                        setSelectedFileName("");
+                        setAllExtractedEvents([]);
+                        setFilteredEvents([]);
+                        setDisplayedEvents([]);
+                        clearFileSelection();
+                        setShowFilters(false);
                       }}
                     >
-                      <Text style={styles.changeFileButtonText}>Change File</Text>
+                      <Text style={styles.addMoreButtonText}>
+                        📤 Upload Another File
+                      </Text>
                     </TouchableOpacity>
-                  </View>
-                )}
 
-                {/* User Input Fields for AI Extraction */}
-                {fileSelected && showUserInputs && (
-                  <View style={styles.userInputSection}>
-                    <Text style={styles.instructionText}>
-                      Step 2: Provide your info (optional) and submit
-                    </Text>
-                    <Text style={styles.userInputTitle}>
-                      📚 Your Information (Optional)
-                    </Text>
-                    <Text style={styles.userInputSubtitle}>
-                      Provide your major info to filter relevant courses, or leave empty to extract everything from the file
-                    </Text>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Major Level (Optional)</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={userMajorLevel}
-                        onChangeText={setUserMajorLevel}
-                        placeholder="e.g., 1, 2, 3, or 4 (leave empty for all)"
-                        keyboardType="numeric"
-                      />
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Offered To - Your Major (Optional)</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={userOfferedTo}
-                        onChangeText={setUserOfferedTo}
-                        placeholder="e.g., Computer Science (leave empty for all)"
-                      />
-                    </View>
-
-                    {/* Submit Button */}
                     <TouchableOpacity
-                      style={styles.submitButton}
-                      onPress={handleSubmit}
-                      disabled={isProcessing}
+                      style={styles.saveAllButton}
+                      onPress={handleSaveAllEvents}
                     >
-                      <Text style={styles.submitButtonText}>
-                        {isProcessing ? "Processing..." : "🚀 Submit & Extract Events"}
+                      <Text style={styles.saveAllButtonText}>
+                        ✅ Save All Events ({displayedEvents.length})
                       </Text>
                     </TouchableOpacity>
                   </View>
-                )}
-              </View>
-            )}
-
-            {/* Processing Indicator */}
-            {isProcessing && (
-              <View style={styles.processingContainer}>
-                <ActivityIndicator size="large" color="#007AFF" />
-                <Text style={styles.processingText}>
-                  Extracting events from your file...
-                </Text>
-                <Text style={styles.processingSubtext}>
-                  This may take a few moments
-                </Text>
-              </View>
-            )}
-
-            {/* Extracted Events List */}
-            {extractedEvents.length > 0 && !isProcessing && (
-              <View style={styles.eventsSection}>
-                <Text style={styles.sectionTitle}>
-                  Found {extractedEvents.length} event(s)
-                </Text>
-                <Text style={styles.sectionSubtitle}>
-                  Review and edit before adding to calendar
-                </Text>
-
-                {extractedEvents.map((event) => (
-                  <View key={event.id} style={styles.eventCard}>
-                    {editingEventId === event.id ? (
-                      // Edit Mode
-                      <View style={styles.editContainer}>
-                        <Text style={styles.editLabel}>Title</Text>
-                        <TextInput
-                          style={styles.editInput}
-                          value={editTitle}
-                          onChangeText={setEditTitle}
-                          placeholder="Event title"
-                        />
-
-                        <Text style={styles.editLabel}>Description</Text>
-                        <TextInput
-                          style={[styles.editInput, styles.editInputMultiline]}
-                          value={editDescription}
-                          onChangeText={setEditDescription}
-                          placeholder="Event description"
-                          multiline
-                          numberOfLines={3}
-                        />
-
-                        <Text style={styles.editLabel}>Date (YYYY-MM-DD)</Text>
-                        <TextInput
-                          style={styles.editInput}
-                          value={editDate}
-                          onChangeText={setEditDate}
-                          placeholder="2025-10-20"
-                        />
-
-                        <View style={styles.editActions}>
-                          <TouchableOpacity
-                            style={styles.cancelButton}
-                            onPress={handleCancelEdit}
-                          >
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.saveEditButton}
-                            onPress={handleSaveEdit}
-                          >
-                            <Text style={styles.saveEditButtonText}>Save</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ) : (
-                      // View Mode
-                      <>
-                        <View style={styles.eventHeader}>
-                          <View style={styles.eventHeaderLeft}>
-                            <Text style={styles.eventTitle}>{event.title}</Text>
-                            {event.confidence && (
-                              <Text style={styles.confidenceText}>
-                                {Math.round(event.confidence * 100)}% confident
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-
-                        <Text style={styles.eventDate}>
-                          📅 {formatDate(event.date)}
-                        </Text>
-
-                        {event.description && (
-                          <Text style={styles.eventDescription}>
-                            {event.description}
-                          </Text>
-                        )}
-
-                        <View style={styles.eventActions}>
-                          <TouchableOpacity
-                            style={styles.editButton}
-                            onPress={() => handleEditEvent(event)}
-                          >
-                            <Text style={styles.editButtonText}>✏️ Edit</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.deleteButton}
-                            onPress={() => handleDeleteEvent(event.id)}
-                          >
-                            <Text style={styles.deleteButtonText}>
-                              🗑️ Delete
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
-                  </View>
-                ))}
-
-                {/* Action Buttons */}
-                <View style={styles.bottomActions}>
-                  <TouchableOpacity
-                    style={styles.addMoreButton}
-                    onPress={() => setExtractedEvents([])}
-                  >
-                    <Text style={styles.addMoreButtonText}>
-                      + Upload Another File
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.saveAllButton}
-                    onPress={handleSaveAllEvents}
-                  >
-                    <Text style={styles.saveAllButtonText}>
-                      Save All Events ({extractedEvents.length})
-                    </Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
-          </ScrollView>
+              )}
+            </ScrollView>
           </View>
         </DragDropUpload>
       </View>
     </Modal>
   );
 }
+
+// =============================================================================
+// STYLES
+// =============================================================================
 
 const styles = StyleSheet.create({
   modalOverlay: {
@@ -683,9 +832,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: "75%",
-    minHeight: "75%",
-    top: "25%"
+    maxHeight: "85%",
+    minHeight: "85%",
   },
   header: {
     flexDirection: "row",
@@ -701,9 +849,9 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#f0f0f0",
     alignItems: "center",
     justifyContent: "center",
@@ -716,16 +864,30 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+
+  // Upload Section
   uploadSection: {
-    alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: 20,
   },
-  instructionText: {
-    fontSize: 16,
+  stepContainer: {
+    backgroundColor: "#f8f9fa",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  stepTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 8,
+  },
+  stepDescription: {
+    fontSize: 14,
     color: "#666",
-    textAlign: "center",
-    marginBottom: 30,
-    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  uploadButtons: {
+    gap: 12,
   },
   uploadButton: {
     backgroundColor: "#007AFF",
@@ -734,11 +896,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 16,
     borderRadius: 12,
-    width: "100%",
-    marginBottom: 15,
   },
   uploadButtonSecondary: {
     backgroundColor: "#34C759",
+  },
+  uploadButtonTertiary: {
+    backgroundColor: "#FF9500",
   },
   uploadButtonIcon: {
     fontSize: 24,
@@ -749,241 +912,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 20,
-  },
-  loadingText: {
-    marginLeft: 10,
-    color: "#666",
-    fontSize: 14,
-  },
-  processingContainer: {
-    alignItems: "center",
-    paddingVertical: 60,
-  },
-  processingText: {
-    marginTop: 20,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  processingSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#666",
-  },
-  eventsSection: {
-    paddingBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 5,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 20,
-  },
-  eventCard: {
-    backgroundColor: "#f8f8f8",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: "#007AFF",
-  },
-  eventHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  eventHeaderLeft: {
-    flex: 1,
-  },
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  confidenceText: {
-    fontSize: 11,
-    color: "#34C759",
-    fontWeight: "600",
-  },
-  eventDate: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  eventDescription: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 12,
-  },
-  eventActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-  },
-  editButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#007AFF",
-  },
-  editButtonText: {
-    color: "#007AFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  deleteButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#FF3B30",
-  },
-  deleteButtonText: {
-    color: "#FF3B30",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  editContainer: {
-    gap: 10,
-  },
-  editLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  editInput: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-  },
-  editInputMultiline: {
-    minHeight: 80,
-    textAlignVertical: "top",
-  },
-  editActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 10,
-  },
-  cancelButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#f0f0f0",
-  },
-  cancelButtonText: {
-    color: "#666",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  saveEditButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#007AFF",
-  },
-  saveEditButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  bottomActions: {
-    marginTop: 20,
-    gap: 12,
-  },
-  addMoreButton: {
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    borderWidth: 2,
-    borderColor: "#007AFF",
-    alignItems: "center",
-  },
-  addMoreButtonText: {
-    color: "#007AFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  saveAllButton: {
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: "#34C759",
-    alignItems: "center",
-  },
-  saveAllButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  userInputSection: {
-    backgroundColor: "#f0f8ff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#007AFF",
-  },
-  userInputTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  userInputSubtitle: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 16,
-  },
-  inputGroup: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-  },
+
+  // Selected File
   selectedFileSection: {
     backgroundColor: "#e8f5e9",
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    padding: 20,
+    alignItems: "center",
     borderWidth: 2,
     borderColor: "#34C759",
-    alignItems: "center",
+    borderStyle: "dashed",
+  },
+  selectedFileIcon: {
+    fontSize: 32,
+    marginBottom: 8,
   },
   selectedFileTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#34C759",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   selectedFileName: {
     fontSize: 14,
@@ -1004,16 +952,257 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+
+  // Input Fields
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+  },
   submitButton: {
-    backgroundColor: "#FF9500",
-    padding: 16,
+    backgroundColor: "#007AFF",
+    padding: 18,
     borderRadius: 12,
     alignItems: "center",
-    marginTop: 20,
+    marginTop: 8,
   },
   submitButtonText: {
     color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  // Processing
+  processingContainer: {
+    alignItems: "center",
+    paddingVertical: 80,
+  },
+  processingText: {
+    marginTop: 20,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+  },
+  processingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#666",
+  },
+
+  // Results Section
+  eventsSection: {
+    paddingBottom: 40,
+  },
+  resultsHeader: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+  },
+  filterNote: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 4,
+  },
+
+  // Quick Filters
+  quickFilters: {
+    marginBottom: 20,
+  },
+  quickFilterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#f0f0f0",
+    marginRight: 8,
+  },
+  filterChipActive: {
+    backgroundColor: "#007AFF",
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+
+  // Event Cards
+  eventCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: "#007AFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  eventHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  eventHeaderLeft: {
+    flex: 1,
+  },
+  eventTitle: {
     fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 4,
+  },
+  confidenceBadge: {
+    backgroundColor: "#e8f5e9",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  confidenceText: {
+    fontSize: 11,
+    color: "#34C759",
+    fontWeight: "600",
+  },
+  eventDate: {
+    fontSize: 14,
+    color: "#007AFF",
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  eventDescription: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  eventActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  editButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  editButtonText: {
+    color: "#007AFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  deleteButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#fef2f2",
+  },
+  deleteButtonText: {
+    color: "#FF3B30",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // Edit Mode
+  editContainer: {
+    gap: 12,
+  },
+  editLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  editInput: {
+    backgroundColor: "#f8f8f8",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+  },
+  editInputMultiline: {
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  editActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 8,
+  },
+  cancelButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  saveEditButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#007AFF",
+  },
+  saveEditButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // Bottom Actions
+  bottomActions: {
+    marginTop: 24,
+    gap: 12,
+  },
+  addMoreButton: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#007AFF",
+    alignItems: "center",
+  },
+  addMoreButtonText: {
+    color: "#007AFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  saveAllButton: {
+    padding: 18,
+    borderRadius: 12,
+    backgroundColor: "#34C759",
+    alignItems: "center",
+  },
+  saveAllButtonText: {
+    color: "#fff",
+    fontSize: 18,
     fontWeight: "700",
   },
 });

@@ -10,7 +10,7 @@ export default function CalendarScreen() {
     today.getMonth()
   );
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
-  const { events, addEvent, deleteEvent, getEventsForDate } = useEvents();
+  const { events, addEvent, addMultipleEvents, deleteEvent, getEventsForDate } = useEvents();
 
   const handleMonthYearChange = (newMonth: number, newYear: number) => {
     setSelectedMonth(newMonth);
@@ -20,9 +20,9 @@ export default function CalendarScreen() {
   const handleAddMultipleEvents = async (
     newEvents: Omit<import("../hooks/useEvents").CalendarEvent, "id">[]
   ) => {
-    for (const event of newEvents) {
-      await addEvent(event);
-    }
+    // ✅ Call the batch function once. 
+    // This is much faster and guarantees all events are saved.
+    await addMultipleEvents(newEvents);
   };
 
   return (
