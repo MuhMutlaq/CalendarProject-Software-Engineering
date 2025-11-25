@@ -37,7 +37,7 @@ except ImportError:
     logger.warning("pdf2image not installed. PDF image conversion not available.")
 
 # Initialize FastAPI app
-app = FastAPI(
+app= FastAPI(
     title= "Enhanced Calendar Event Extractor API",
     description= "Extract dates and events from images and PDFs with AI-powered OCR",
     version= "2.0.0"
