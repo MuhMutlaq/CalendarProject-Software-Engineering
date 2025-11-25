@@ -65,7 +65,7 @@ wheels = [
 ]
 
 [[package]]
-name = "calendar"
+name = "calendarproject"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
@@ -73,6 +73,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pdf2image" },
+    { name = "pillow" },
     { name = "pymupdf" },
     { name = "pypdf2" },
     { name = "python-dateutil" },
@@ -90,6 +91,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.5" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
     { name = "pdf2image", specifier = ">=1.17.0" },
+    { name = "pillow", specifier = ">=12.0.0" },
     { name = "pymupdf", specifier = ">=1.26.6" },
     { name = "pypdf2", specifier = ">=3.0.1" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },

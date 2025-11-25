@@ -28,11 +28,11 @@ class ImagePreprocessor:
     Applies multiple enhancement techniques to improve text clarity.
     """
 
-    def __init__(self, output_dir: str = "processed"):
+    def __init__(self, output_dir: str= "processed"):
         self.output_dir= output_dir
         os.makedirs(output_dir, exist_ok= True)
 
-    def preprocess(self, image_path: str, enhance_level: str = "auto") -> str:
+    def preprocess(self, image_path: str, enhance_level: str= "auto") -> str:
         """
         Main preprocessing pipeline. Applies optimal enhancements based on image analysis.
         
@@ -43,6 +43,7 @@ class ImagePreprocessor:
         Returns:
             Path to preprocessed image
         """
+        
         if not CV2_AVAILABLE and not PIL_AVAILABLE:
             logger.warning("No image processing library available, returning original")
             return image_path
@@ -56,9 +57,8 @@ class ImagePreprocessor:
             return self._preprocess_pil(image_path)
 
     def _preprocess_opencv(self, image_path: str, enhance_level: str) -> str:
-        """
-        OpenCV-based preprocessing pipeline for maximum quality.
-        """
+        """OpenCV-based preprocessing pipeline for maximum quality."""
+        
         # Read image
         img= cv2.imread(image_path)
         if img is None:
@@ -85,7 +85,7 @@ class ImagePreprocessor:
         # Step 5: Apply adaptive thresholding or binarization based on level
         if enhance_level == "heavy":
             # Strong binarization for poor quality images
-            processed = cv2.adaptiveThreshold(
+            processed= cv2.adaptiveThreshold(
                 denoised, 255,
                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                 cv2.THRESH_BINARY,
@@ -100,7 +100,7 @@ class ImagePreprocessor:
             # Light sharpening
             kernel= np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
             processed= cv2.filter2D(processed, -1, kernel)
-        else:  # light
+        else: # light
             # Light enhancement - preserve original quality
             clahe= cv2.createCLAHE(clipLimit= 1.5, tileGridSize= (8, 8))
             processed= clahe.apply(denoised)
@@ -119,15 +119,14 @@ class ImagePreprocessor:
         logger.info(f"Preprocessed image saved to: {output_path}")
         return output_path
 
-    def _upscale_if_needed(self, image: np.ndarray, min_dimension: int = 1500) -> np.ndarray:
-        """
-        Upscale image if it's too small for good OCR.
-        """
+    def _upscale_if_needed(self, image: np.ndarray, min_dimension: int= 1500) -> np.ndarray:
+        """Upscale image if it's too small for good OCR."""
+        
         height, width= image.shape[:2]
         
         if width < min_dimension or height < min_dimension:
             scale= max(min_dimension / width, min_dimension / height)
-            scale= min(scale, 3.0)  # Don't upscale more than 3x
+            scale= min(scale, 3.0) # Don't upscale more than 3x
             
             new_width= int(width * scale)
             new_height= int(height * scale)
@@ -138,9 +137,8 @@ class ImagePreprocessor:
         return image
 
     def _analyze_image(self, gray_img: np.ndarray) -> str:
-        """
-        Analyze image quality to determine optimal preprocessing level.
-        """
+        """Analyze image quality to determine optimal preprocessing level."""
+        
         # Calculate image statistics
         mean_brightness= np.mean(gray_img)
         std_brightness= np.std(gray_img)
@@ -162,9 +160,8 @@ class ImagePreprocessor:
             return "light"
 
     def _deskew(self, image: np.ndarray) -> np.ndarray:
-        """
-        Correct image rotation/skew for better OCR.
-        """
+        """Correct image rotation/skew for better OCR."""
+        
         try:
             # Find all non-zero points
             coords= np.column_stack(np.where(image > 0))
@@ -197,9 +194,8 @@ class ImagePreprocessor:
         return image
 
     def _remove_borders(self, image: np.ndarray) -> np.ndarray:
-        """
-        Remove black borders and noise at image edges.
-        """
+        """Remove black borders and noise at image edges."""
+        
         try:
             # Find contours
             contours, _= cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -225,9 +221,8 @@ class ImagePreprocessor:
         return image
 
     def _preprocess_pil(self, image_path: str) -> str:
-        """
-        PIL-based preprocessing (fallback when OpenCV not available).
-        """
+        """PIL-based preprocessing (fallback when OpenCV not available)."""
+        
         image= Image.open(image_path)
         
         # Convert to grayscale
@@ -253,7 +248,7 @@ class ImagePreprocessor:
         logger.info(f"PIL preprocessed image saved to: {output_path}")
         return output_path
 
-    def thicken_text(self, image_path: str, kernel_size: int = 3) -> str:
+    def thicken_text(self, image_path: str, kernel_size: int= 3) -> str:
         """
         Make text/fonts thicker using morphological dilation.
         Useful for thin or faint text that's hard to read.
@@ -265,6 +260,7 @@ class ImagePreprocessor:
         Returns:
             Path to processed image with thicker text
         """
+        
         if not CV2_AVAILABLE:
             logger.warning("OpenCV not available for text thickening")
             return image_path
@@ -280,7 +276,7 @@ class ImagePreprocessor:
         kernel= np.ones((kernel_size, kernel_size), np.uint8)
         
         # Apply dilation (makes white areas larger = thicker text when inverted back)
-        dilated= cv2.dilate(inverted, kernel, iterations=1)
+        dilated= cv2.dilate(inverted, kernel, iterations= 1)
         
         # Invert back
         result= cv2.bitwise_not(dilated)
@@ -290,10 +286,10 @@ class ImagePreprocessor:
         output_path= os.path.join(self.output_dir, output_filename)
         cv2.imwrite(output_path, result)
         
-        logger.info(f"Thickened text (kernel={kernel_size}) saved to: {output_path}")
+        logger.info(f"Thickened text (kernel= {kernel_size}) saved to: {output_path}")
         return output_path
 
-    def thin_text(self, image_path: str, kernel_size: int = 2) -> str:
+    def thin_text(self, image_path: str, kernel_size: int= 2) -> str:
         """
         Make text/fonts thinner using morphological erosion.
         Useful for bold or thick text that's bleeding together.
@@ -305,6 +301,7 @@ class ImagePreprocessor:
         Returns:
             Path to processed image with thinner text
         """
+        
         if not CV2_AVAILABLE:
             logger.warning("OpenCV not available for text thinning")
             return image_path
@@ -320,7 +317,7 @@ class ImagePreprocessor:
         kernel= np.ones((kernel_size, kernel_size), np.uint8)
         
         # Apply erosion (makes white areas smaller = thinner text when inverted back)
-        eroded= cv2.erode(inverted, kernel, iterations=1)
+        eroded= cv2.erode(inverted, kernel, iterations= 1)
         
         # Invert back
         result= cv2.bitwise_not(eroded)
@@ -344,6 +341,7 @@ class ImagePreprocessor:
         Returns:
             Path to enhanced image
         """
+        
         if not CV2_AVAILABLE:
             return image_path
         
@@ -356,18 +354,18 @@ class ImagePreprocessor:
         
         # Detect horizontal lines
         horizontal_kernel= cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
-        horizontal_lines= cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
+        horizontal_lines= cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel, iterations= 2)
         
         # Detect vertical lines
         vertical_kernel= cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
-        vertical_lines= cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel, iterations=2)
+        vertical_lines= cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel, iterations= 2)
         
         # Combine lines
         table_structure= cv2.add(horizontal_lines, vertical_lines)
         
         # Dilate lines to make them more prominent
         kernel= np.ones((2, 2), np.uint8)
-        table_structure= cv2.dilate(table_structure, kernel, iterations=1)
+        table_structure= cv2.dilate(table_structure, kernel, iterations= 1)
         
         # Combine with original (enhanced lines)
         result= cv2.bitwise_not(binary)
@@ -393,6 +391,7 @@ class ImagePreprocessor:
         Returns:
             Path to preprocessed image
         """
+        
         if not CV2_AVAILABLE:
             return self.preprocess(image_path)
 
@@ -443,7 +442,7 @@ class ImagePreprocessor:
         logger.info(f"Table-optimized image saved to: {output_path}")
         return output_path
 
-    def preprocess_for_ocr_accuracy(self, image_path: str, text_thickness: str = "auto") -> str:
+    def preprocess_for_ocr_accuracy(self, image_path: str, text_thickness: str= "auto") -> str:
         """
         Advanced preprocessing specifically optimized for maximum OCR accuracy.
         Analyzes text and applies appropriate thickness adjustment.
@@ -455,6 +454,7 @@ class ImagePreprocessor:
         Returns:
             Path to preprocessed image
         """
+        
         if not CV2_AVAILABLE:
             return self.preprocess(image_path)
 
@@ -528,6 +528,7 @@ class ImagePreprocessor:
         
         Returns: "thin", "normal", or "thick" recommendation
         """
+        
         # Binarize
         _, binary= cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         
@@ -550,6 +551,48 @@ class ImagePreprocessor:
         else:
             # Normal text
             return "normal"
+
+    def preprocess_minimal(self, image_path: str) -> str:
+        """
+        Minimal preprocessing - just upscale and light contrast enhancement.
+        Preserves original image structure without heavy modifications.
+        Best for high-quality PDFs where table structure needs to be preserved.
+        
+        Args:
+            image_path: Path to input image
+            
+        Returns:
+            Path to preprocessed image
+        """
+        
+        if not CV2_AVAILABLE:
+            return image_path
+
+        img= cv2.imread(image_path)
+        if img is None:
+            return image_path
+
+        # Step 1: Upscale for better detail
+        img= self._upscale_if_needed(img, min_dimension= 2000)
+        
+        # Step 2: Convert to grayscale
+        gray= cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Step 3: Light CLAHE only - no binarization
+        clahe= cv2.createCLAHE(clipLimit= 1.5, tileGridSize= (8, 8))
+        enhanced= clahe.apply(gray)
+        
+        # Step 4: Very light sharpening
+        kernel= np.array([[0, -0.5, 0], [-0.5, 3, -0.5], [0, -0.5, 0]])
+        sharpened= cv2.filter2D(enhanced, -1, kernel)
+        
+        # Save
+        output_filename= f"minimal_{Path(image_path).stem}.png"
+        output_path= os.path.join(self.output_dir, output_filename)
+        cv2.imwrite(output_path, sharpened)
+        
+        logger.info(f"Minimal preprocessed image saved to: {output_path}")
+        return output_path
 
 
 class PDFImageExtractor:

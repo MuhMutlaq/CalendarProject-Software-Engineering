@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2.3.5",
     "opencv-python>=4.11.0.86",
     "pdf2image>=1.17.0",
+    "pillow>=12.0.0",
     "pymupdf>=1.26.6",
     "pypdf2>=3.0.1",
     "python-dateutil>=2.9.0.post0",
