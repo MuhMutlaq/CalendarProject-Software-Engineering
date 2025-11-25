@@ -1,6 +1,6 @@
 # Python
 __pycache__/
-*.py[cod]
+*.py
 *$py.class
 *.so
 .Python
@@ -29,8 +29,8 @@ uploads/
 *~
 
 # Environment
-.env
-.env.local
+# .env
+# .env.local
 
 # Logs
 *.log

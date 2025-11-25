@@ -1,8 +1,8 @@
 import os
-import logging
 from typing import Tuple, List
 from pathlib import Path
 
+import logging
 logging.basicConfig(level= logging.INFO)
 logger= logging.getLogger(__name__)
 

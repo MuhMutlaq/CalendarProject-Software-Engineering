@@ -5,23 +5,22 @@ import CalendarMonthView from "./CalendarMonthView";
 import { useEvents } from "../hooks/useEvents";
 
 export default function CalendarScreen() {
-  const today = new Date();
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(
+  const today= new Date();
+  const [selectedMonth, setSelectedMonth]= useState<number | null>(
     today.getMonth()
   );
-  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
-  const { events, addEvent, addMultipleEvents, deleteEvent, getEventsForDate } = useEvents();
+  const [selectedYear, setSelectedYear]= useState(today.getFullYear());
+  const { events, addEvent, addMultipleEvents, deleteEvent, getEventsForDate }= useEvents();
 
-  const handleMonthYearChange = (newMonth: number, newYear: number) => {
+  const handleMonthYearChange= (newMonth: number, newYear: number) => {
     setSelectedMonth(newMonth);
     setSelectedYear(newYear);
   };
 
-  const handleAddMultipleEvents = async (
+  const handleAddMultipleEvents= async (
     newEvents: Omit<import("../hooks/useEvents").CalendarEvent, "id">[]
   ) => {
-    // ✅ Call the batch function once. 
-    // This is much faster and guarantees all events are saved.
+    // Call the batch function once. It's much faster and guarantees all events are saved.
     await addMultipleEvents(newEvents);
   };
 
@@ -35,7 +34,7 @@ export default function CalendarScreen() {
           events={events}
           onAddEvents={handleAddMultipleEvents}
         />
-      ) : (
+      ): (
         <CalendarMonthView
           month={selectedMonth}
           year={selectedYear}

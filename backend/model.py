@@ -2,10 +2,10 @@ import requests
 import json
 import os
 import base64
-import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
+import logging
 logging.basicConfig(level= logging.INFO)
 logger= logging.getLogger(__name__)
 
@@ -26,7 +26,10 @@ class ExtractionModel:
         self.response= None
 
     def _get_extraction_prompt(self) -> str:
-        """Returns the enhanced extraction prompt optimized for exam schedules. This prompt is designed for maximum accuracy and completeness."""
+        """
+        Returns the enhanced extraction prompt optimized for exam schedules.
+        This prompt is designed for maximum accuracy and completeness.
+        """
         
         return """
         You are an expert exam schedule data extractor. Extract ALL exams with CORRECT dates and times.
@@ -34,49 +37,30 @@ class ExtractionModel:
         ## TABLE STRUCTURE (6 COLUMNS)
         | Date | Session | Time | Offered To | Level-Major | Course Code | Course Name |
 
-        ## CRITICAL: MERGED CELL RULES
+        ## CRITICAL: SESSION BOUNDARY RULES
 
-        The Date, Session, and Time columns have MERGED CELLS spanning multiple rows.
-        - When you see a date (e.g., "Tuesday 23/12/2025"), it applies to ALL courses until the NEXT date appears
-        - When you see a session (e.g., "Session 1"), it applies to ALL courses until "Session 2" appears
-        - When you see a time (e.g., "9:00 to 11:30"), it applies to ALL courses in that session
+        Each day has TWO sessions:
+        - **Session 1** = Morning (9:00 to 11:00 or 9:00 to 11:30)
+        - **Session 2** = Afternoon (12:00 to 2:00)
 
-        ## READING THE TABLE ROW BY ROW
+        ### READING RULE:
+        1. Find "Session 1" marker → All courses below it until "Session 2" get the Session 1 TIME
+        2. Find "Session 2" marker → All courses below it until next date get the Session 2 TIME
 
-        For EACH row, determine:
-        1. **Current Date**: What date is this row under? (Look UP to find the nearest date)
-        2. **Current Session**: Is this Session 1 or Session 2? (Look UP to find)
-        3. **Current Time**: What time slot? (Session 1 = morning 9:00, Session 2 = afternoon 12:00)
-        4. **Offered To**: Read directly from the row
-        5. **Level**: Read directly from the row
-        6. **Course Code**: Read directly from the row
-        7. **Course Name**: Read directly from the row
-
-        ## IMPORTANT: SESSION AND TIME MAPPING
-        - **Session 1** times: "9:00 to 11:00" OR "9:00 to 11:30"
-        - **Session 2** times: "12:00 to 2:00"
-
-        If you see multiple courses BEFORE "Session 2" appears, they are ALL in Session 1 with the Session 1 time!
-
-        ## EXAMPLE OF CORRECT EXTRACTION
-
-        If the table shows:
+        ### EXAMPLE - Tuesday 23/12/2025:
         ```
-        Tuesday    | Session 1 | 9:00 to 11:30 | CS  | 5 | MATH306 | Logic Proof
-        23/12/2025 |           |               | CS  | 7 | MATH401 | Logic Proof  
-                |           |               | CYS | 5 | CYS 301 | Math Found.
-                |           |               | CIS | 5 | CIS 308 | IT Project Mgmt  ← STILL Session 1!
-                |           |               | CIS | 7 | CIS 414 | IT Project Mgmt
-                | Session 2 | 12:00 to 2:00 | ALL | 3 | STAT238 | Statistics  ← NOW Session 2 starts
+        Session 1 | 9:00-11:30 | CS  | 5 | MATH306 | Logic Proof        ← TIME: 9:00 to 11:30
+                |            | CS  | 7 | MATH401 | Logic Proof        ← TIME: 9:00 to 11:30
+                |            | CYS | 7 | CYS 402 | Math Foundations   ← TIME: 9:00 to 11:30
+                |            | CYS | 5 | CYS 301 | Math Foundations   ← TIME: 9:00 to 11:30
+                |            | CIS | 5 | CIS 308 | IT Project Mgmt    ← TIME: 9:00 to 11:30 !!!
+                |            | CIS | 7 | CIS 414 | IT Project Mgmt    ← TIME: 9:00 to 11:30
+        Session 2 | 12:00-2:00 | AI  | 7 | ARTI401 | AI Principles      ← TIME: 12:00 to 2:00 (Session 2 starts here!)
         ```
 
-        Correct extraction:
-        - MATH306: Date=23/12/2025, Time=9:00 to 11:30
-        - MATH401: Date=23/12/2025, Time=9:00 to 11:30
-        - CYS 301: Date=23/12/2025, Time=9:00 to 11:30
-        - CIS 308: Date=23/12/2025, Time=9:00 to 11:30 ← SAME TIME as above (still Session 1)
-        - CIS 414: Date=23/12/2025, Time=9:00 to 11:30
-        - STAT238: Date=23/12/2025, Time=12:00 to 2:00 ← NEW TIME (Session 2 started)
+        ## KEY POINT:
+        CIS 308 and CIS 414 are in Session 1 (morning) on 23/12/2025!
+        Their time is 9:00 to 11:30, NOT 12:00 to 2:00!
 
         ## OUTPUT FORMAT
         Return ONLY valid JSON array:
@@ -96,68 +80,65 @@ class ExtractionModel:
         - Times: NO extra spaces - "9:00 to 11:00" not "9 : 0 0 to 11:00"
         - Majors: Uppercase, comma-separated - "AI,CS" not "AI/CS"
         - Levels: Numbers only - "5" not "Level 5"
-        - Multiple levels: "5,7" format
 
-        ## SELF-CHECK BEFORE RESPONDING
-        1. Did each course get the CORRECT date from its merged cell section?
-        2. Did each course get the CORRECT time based on Session 1 or Session 2?
-        3. Are courses BEFORE "Session 2" getting Session 1 time (morning)?
-        4. Are courses AFTER "Session 2" getting Session 2 time (afternoon)?
+        ## MANDATORY VERIFICATION CHECKLIST
+        Before outputting, verify these specific courses have CORRECT times:
 
-        EXTRACT ALL EXAMS NOW WITH CORRECT DATES AND TIMES!
+        | Course | Date | Correct Time | Session |
+        |--------|------|--------------|---------|
+        | CIS 308 | 23/12/2025 | 9:00 to 11:30 | Session 1 (morning) |
+        | CIS 414 | 23/12/2025 | 9:00 to 11:30 | Session 1 (morning) |
+        | ARTI 401 | 23/12/2025 | 12:00 to 2:00 | Session 2 (afternoon) |
+
+        If your extraction shows CIS 308 with time "12:00 to 2:00", that is WRONG! Go back and fix it.
+
+        EXTRACT ALL EXAMS NOW WITH CORRECT SESSION TIMES!
         """
 
     def _get_image_extraction_prompt(self) -> str:
-        """Returns enhanced prompt specifically optimized for image OCR extraction."""
+        """
+        Returns enhanced prompt specifically optimized for image OCR extraction.
+        """
         
         return """
-        You are an expert OCR system extracting exam schedules from images. Pay EXTREME attention to merged cells.
+        You are an expert OCR system extracting exam schedules from images. Pay EXTREME attention to SESSION BOUNDARIES.
 
         ## TABLE STRUCTURE (Read Left to Right)
         | Date | Session | Time | Offered To | Level | Course Code | Course Name |
 
-        ## CRITICAL: UNDERSTANDING MERGED CELLS
+        ## CRITICAL: SESSION BOUNDARY DETECTION
 
-        This table has MERGED CELLS in the first 3 columns:
-        - **Date**: One date spans MANY course rows (10-20 rows!)
-        - **Session**: "Session 1" or "Session 2" spans several course rows
-        - **Time**: Time slot spans all courses in that session
+        The table has TWO sessions per day:
+        - **Session 1** = MORNING exams (time starts with 9:00)
+        - **Session 2** = AFTERNOON exams (time starts with 12:00)
 
-        ## HOW TO READ MERGED CELLS CORRECTLY
+        ### HOW TO DETECT SESSION BOUNDARIES:
+        1. Look for the text "Session 1" or "Session 2" in the Session column
+        2. The TIME column shows the actual time (9:00-11:00/11:30 OR 12:00-2:00)
+        3. ALL courses ABOVE "Session 2" text belong to Session 1
+        4. ALL courses BELOW "Session 2" text belong to Session 2
 
-        ### Step 1: Identify Date Boundaries
-        Look at the leftmost column. Each date block contains multiple sessions and courses.
-        Dates in this schedule: 21/12, 22/12, 23/12, 24/12, 25/12, 28/12, 29/12, 30/12, 31/12, 01/01, 04/01
+        ### CRITICAL RULE:
+        When you see courses listed vertically, they share the SAME session/time until you see a NEW session marker!
 
-        ### Step 2: Identify Sessions Within Each Date
-        Within each date, find "Session 1" and "Session 2":
-        - Session 1 = Morning (typically 9:00 to 11:00 or 9:00 to 11:30)
-        - Session 2 = Afternoon (typically 12:00 to 2:00)
-
-        ### Step 3: Assign Time to Each Course
-        IMPORTANT: A course belongs to Session 1 until you see "Session 2" appear!
-
-        Example:
+        Example for Tuesday 23/12/2025:
         ```
-        Tuesday    | Session 1 | 9:00-11:30 | CS  | 5 | MATH306 | Logic       ← Session 1
-        23/12/2025 |           |            | CYS | 5 | CYS301  | Math Found  ← Session 1 (same!)
-                |           |            | CIS | 5 | CIS308  | IT Project  ← Session 1 (same!)
-                |           |            | CIS | 7 | CIS414  | IT Project  ← Session 1 (same!)
-                | Session 2 | 12:00-2:00 | ALL | 3 | STAT238 | Statistics  ← Session 2 (NEW!)
-                |           |            | CIS | 9 | CIS512  | Software QA ← Session 2 (same!)
+        Tuesday    | Session 1 | 9:00-11:30 | CS    | 5 | MATH306  | Logic        ← 9:00-11:30
+        23/12/2025 |           |            | CS    | 7 | MATH401  | Logic        ← 9:00-11:30 (SAME!)
+                |           |            | CYS   | 7 | CYS 402  | Math Found   ← 9:00-11:30 (SAME!)
+                |           |            | CYS   | 5 | CYS 301  | Math Found   ← 9:00-11:30 (SAME!)
+                |           |            | CIS   | 5 | CIS 308  | IT Project   ← 9:00-11:30 (SAME! Still Session 1!)
+                |           |            | CIS   | 7 | CIS 414  | IT Project   ← 9:00-11:30 (SAME!)
+                | Session 2 | 12:00-2:00 | AI,CS | 7 | ARTI 401 | AI Princ.    ← 12:00-2:00 (NOW Session 2!)
         ```
 
         In this example:
-        - CIS 308 gets: Date=23/12/2025, Time=9:00 to 11:30 (because it's BEFORE Session 2)
-        - STAT238 gets: Date=23/12/2025, Time=12:00 to 2:00 (because it's AFTER Session 2 marker)
+        - CIS 308 time = 9:00 to 11:30 (because it's BEFORE "Session 2" marker)
+        - ARTI 401 time = 12:00 to 2:00 (because it's AFTER "Session 2" marker)
 
-        ## KEY COURSES TO GET RIGHT (CIS Level 5)
-        Make sure these specific courses have correct dates/times:
-        - CSC331 (Operating Systems) - Should be 21/12/2025, Session 1
-        - CIS 308 (IT Project Management) - Should be 23/12/2025, Session 1 (9:00 to 11:30)
-        - CIS 302 (System Analysis) - Check which date/session
-        - CIS 306 (Data Management) - Check which date/session  
-        - CIS 304+326 (IT Infrastructure) - Check which date/session
+        ## KEY RULE FOR CIS 308:
+        CIS 308 (IT Project Management) is in Session 1 on Tuesday 23/12/2025.
+        Its time MUST be 9:00 to 11:30, NOT 12:00 to 2:00!
 
         ## OUTPUT FORMAT
         Return ONLY valid JSON array:
@@ -175,17 +156,16 @@ class ExtractionModel:
 
         ## DATA CLEANING RULES
         - Remove spaces in times: "9 : 0 0" → "9:00"
-        - Normalize majors: "AI/CS" → "AI,CS"
-        - Level as numbers: "5" not "Level 5"
+        - Normalize majors: "AI/CS" → "AI,CS", "AL" → "AI"
+        - Level as numbers only: "5" not "Level 5"
 
-        ## VERIFICATION CHECKLIST
-        Before outputting, verify:
-        ✓ Is CIS 308 on 23/12/2025 with time 9:00 to 11:30? (Session 1)
-        ✓ Does every course have a date?
-        ✓ Are Session 1 courses getting morning times (9:00)?
-        ✓ Are Session 2 courses getting afternoon times (12:00)?
+        ## VERIFICATION BEFORE OUTPUT
+        For EACH course, ask yourself:
+        1. Is this course BEFORE or AFTER the "Session 2" marker for its date?
+        2. If BEFORE Session 2 → Time should be 9:00 (morning)
+        3. If AFTER Session 2 → Time should be 12:00 (afternoon)
 
-        EXTRACT ALL EXAMS WITH CORRECT DATE AND TIME ASSIGNMENTS!
+        EXTRACT ALL EXAMS WITH CORRECT SESSION/TIME ASSIGNMENTS!
         """
 
     def extract_from_text(self, text: str) -> str:
@@ -198,6 +178,7 @@ class ExtractionModel:
         Returns:
             JSON string with extracted exam data
         """
+        
         logger.info("Extracting exams from text content")
         
         prompt= f"""
@@ -212,7 +193,7 @@ class ExtractionModel:
                 "parts": [{"text": prompt}]
             }],
             "generationConfig": {
-                "temperature": 0.1,  # Low temperature for accuracy
+                "temperature": 0.1, # Low temperature for accuracy
                 "topP": 0.8,
                 "maxOutputTokens": 8192
             }
@@ -230,11 +211,12 @@ class ExtractionModel:
         Returns:
             JSON string with extracted exam data
         """
+        
         logger.info(f"Extracting exams from image: {image_path}")
 
         # Read and encode image
         with open(image_path, "rb") as image_file:
-            image_data= base64.b64encode(image_file.read()).decode("utf-8")
+            image_data= base64.b64encode(image_file.read()).decode('utf-8')
 
         # Determine MIME type
         mime_type= self._get_mime_type(image_path)
@@ -254,7 +236,7 @@ class ExtractionModel:
                 ]
             }],
             "generationConfig": {
-                "temperature": 0.1,
+                "temperature": 0.1, # Low temperature for accuracy
                 "topP": 0.8,
                 "maxOutputTokens": 8192
             }
@@ -273,6 +255,7 @@ class ExtractionModel:
         Returns:
             Combined JSON string with all extracted exams
         """
+        
         logger.info(f"Extracting from {len(image_paths)} PDF page images")
         
         all_exams= []
@@ -291,24 +274,31 @@ class ExtractionModel:
 
     def _get_mime_type(self, file_path: str) -> str:
         """Determine MIME type from file extension."""
+        
         ext= file_path.lower().split('.')[-1]
         mime_types= {
-            "png": "image/png",
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "gif": "image/gif",
-            "bmp": "image/bmp",
-            "webp": "image/webp",
-            "tiff": "image/tiff",
-            "tif": "image/tiff"
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'bmp': 'image/bmp',
+            'webp': 'image/webp',
+            'tiff': 'image/tiff',
+            'tif': 'image/tiff'
         }
-        return mime_types.get(ext, "image/jpeg")
+        return mime_types.get(ext, 'image/jpeg')
 
     def _send_request(self, data: dict) -> str:
         """Send request to Gemini API and return response."""
+        
         logger.info("Sending request to Gemini model")
         
-        response= requests.post(self.URL, headers=self.headers, data=json.dumps(data), timeout=120)
+        response= requests.post(
+            self.URL, 
+            headers= self.headers, 
+            data= json.dumps(data),
+            timeout= 120
+        )
 
         if response.status_code != 200:
             logger.error(f"API request failed: {response.status_code} - {response.text}")
@@ -322,11 +312,12 @@ class ExtractionModel:
             return text_response
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse response: {e}")
-            logger.error(f"Response: {json.dumps(json_response, indent= 2)}")
+            logger.error(f"Response: {json.dumps(json_response, indent=2)}")
             raise Exception(f"Failed to parse Gemini response: {e}")
 
     def _parse_json_response(self, response: str) -> List[Dict]:
         """Parse JSON from model response, handling markdown code blocks."""
+        
         # Clean up response
         response= response.strip()
         
@@ -362,28 +353,29 @@ class FilterModel:
     def filter_events(
         self, 
         events: List[Dict[str, Any]], 
-        major_level: Optional[str] = None,
-        offered_to: Optional[str] = None
+        major_level: str, # REQUIRED
+        offered_to: str # REQUIRED
     ) -> List[Dict[str, Any]]:
         """
         Filter events based on user criteria using AI understanding.
         
         Args:
             events: List of all extracted events
-            major_level: User's major level (e.g., "1", "2", "3", "4")
-            offered_to: User's major (e.g., "SE", "AI", "CIS", "CS", "CYS")
+            major_level: User's major level (e.g., "3", "5", "7", "9") - REQUIRED
+            offered_to: User's major (e.g., "CS", "AI", "CIS", "CYS") - REQUIRED
             
         Returns:
             Filtered list of events matching criteria
         """
-        # If no filters, return all events
-        if not major_level and not offered_to:
-            logger.info("No filters provided, returning all events")
-            return events
+        
+        # Both filters are required
+        if not major_level or not offered_to:
+            logger.warning("Both major_level and offered_to are REQUIRED")
+            return []
 
         logger.info(f"Filtering events - Level: {major_level}, Major: {offered_to}")
 
-        prompt = f"""
+        prompt= f"""
         You are a STRICT filtering assistant. Filter exam events based on student criteria.
 
         ## STUDENT CRITERIA
@@ -423,13 +415,18 @@ class FilterModel:
                 "parts": [{"text": prompt}]
             }],
             "generationConfig": {
-                "temperature": 0.1,
+                "temperature": 0.1, # Low temperature for accuracy
                 "maxOutputTokens": 8192
             }
         }
 
         try:
-            response= requests.post(self.URL, headers= self.headers, data= json.dumps(data), timeout= 60)
+            response= requests.post(
+                self.URL, 
+                headers= self.headers, 
+                data= json.dumps(data),
+                timeout= 60
+            )
 
             if response.status_code != 200:
                 logger.error(f"Filter API failed: {response.status_code}")
@@ -448,82 +445,151 @@ class FilterModel:
             logger.error(f"AI filtering failed: {e}, using local filter")
             return self._local_filter(events, major_level, offered_to)
 
+    def _parse_level_major_pairs(self, level_str: str) -> List[Tuple[str, Optional[str]]]:
+        """
+        Parse complex level formats into (level, major) pairs using regex.
+        
+        Handles formats like:
+        - "5" -> [("5", None)]
+        - "5,7" -> [("5", None), ("7", None)]
+        - "5+7" -> [("5", None), ("7", None)]
+        - "5-7" -> [("5", None), ("7", None)]
+        - "7 (AI) 9 (CS) 9(CYS)" -> [("7", "AI"), ("9", "CS"), ("9", "CYS")]
+        - "5 (CS)-7(CS)" -> [("5", "CS"), ("7", "CS")]
+        - "5 (A1)-7(ΑΙ)" -> [("5", "A1"), ("7", "AI")]
+        
+        Uses \\s* to handle 0 or more spaces between elements.
+        """
+        
+        if not level_str:
+            return []
+        
+        pairs= []
+        
+        # Pattern: digit(s) with optional (MAJOR) - flexible spacing with \s*
+        # Matches: "5", "5 (CS)", "5(CS)", "5 ( CS )", etc.
+        pattern= r'(\d+)\s*(?:\(\s*([^)]+?)\s*\))?'
+        
+        matches= re.findall(pattern, level_str)
+        
+        for match in matches:
+            level= match[0].strip()
+            major= match[1].strip().upper() if match[1] else None
+            if level:
+                pairs.append((level, major))
+        
+        return pairs
+
+    def _check_level_match(self, event_level: str, filter_level: str, filter_major: str) -> bool:
+        """
+        Check if user's level matches the event level using regex parsing.
+        
+        Handles complex formats like "7 (AI) 9 (CS) 9(CYS)" where different
+        levels apply to different majors.
+        """
+        
+        if not event_level or not filter_level:
+            return False
+        
+        pairs= self._parse_level_major_pairs(event_level)
+        
+        if not pairs:
+            return False
+        
+        filter_level= filter_level.strip()
+        filter_major_upper= filter_major.strip().upper() if filter_major else None
+        
+        for level, major in pairs:
+            if level == filter_level:
+                if major:
+                    # This level is specific to a major
+                    if filter_major_upper and major == filter_major_upper:
+                        return True
+                else:
+                    # No associated major = applies to everyone
+                    return True
+        
+        return False
+
+    def _check_major_match(self, event_offered: str, filter_major: str) -> bool:
+        """
+        Check if user's major matches the event's offered_to field.
+        
+        Handles formats like:
+        - "ALL" -> matches everyone
+        - "CS" -> matches only CS
+        - "CS/CYS" -> matches CS or CYS
+        - "AI,CS,CYS" -> matches any of these
+        """
+        
+        if not filter_major:
+            return False
+        
+        if not event_offered:
+            return False
+        
+        event_offered= event_offered.strip().upper()
+        filter_major= filter_major.strip().upper()
+        
+        if event_offered == "ALL":
+            return True
+        
+        # Split by separators: / , + with optional spaces
+        majors= re.split(r'\s*[/,+]\s*', event_offered)
+        majors= [m.strip() for m in majors if m.strip()]
+        
+        return filter_major in majors
+
     def _local_filter(
         self, 
         events: List[Dict[str, Any]], 
-        major_level: Optional[str],
-        offered_to: Optional[str]
+        major_level: str, # REQUIRED
+        offered_to: str # REQUIRED
     ) -> List[Dict[str, Any]]:
         """
-        Local filtering fallback when AI filtering fails.
+        Local filtering with regex-based level parsing.
         STRICT filtering: Both level AND major must match.
+        
+        Args:
+            events: List of events to filter
+            major_level: User's level (REQUIRED)
+            offered_to: User's major (REQUIRED)
         """
-        logger.info("Using local filtering logic (STRICT mode)")
+        
+        logger.info("Using regex-based local filtering (STRICT mode)")
+        
+        if not major_level or not offered_to:
+            logger.warning("Both major_level and offered_to are REQUIRED")
+            return []
+        
         filtered= []
+        filter_level= str(major_level).strip()
+        filter_major= str(offered_to).strip().upper()
 
         for event in events:
             # Get event values
             event_level= str(event.get("Major-Level", event.get("major_level", ""))).strip()
             event_offered= str(event.get("Offered To", event.get("offered_to", ""))).strip().upper()
 
-            # Normalize filter inputs
-            filter_level= str(major_level).strip() if major_level else None
-            filter_major= str(offered_to).strip().upper() if offered_to else None
-
-            level_match= True
-            major_match= True
-
-            # STRICT Level check - must match exactly or be in comma-separated list
-            if filter_level:
-                # Handle comma-separated levels like "5,7"
-                if "," in event_level:
-                    event_levels= [l.strip() for l in event_level.split(",")]
-                    level_match= filter_level in event_levels
-                elif "+" in event_level:
-                    event_levels= [l.strip() for l in event_level.split("+")]
-                    level_match= filter_level in event_levels
-                else:
-                    # Exact match required
-                    level_match = event_level == filter_level
-                
-                # Empty level = unknown, don't include
-                if event_level == "":
-                    level_match= False
-
-            # STRICT Major check
-            if filter_major:
-                # "ALL" means everyone
-                if event_offered == "ALL":
-                    major_match= True
-                # Empty = unknown, don't include
-                elif event_offered == "":
-                    major_match= False
-                # Check for exact match or in list
-                else:
-                    # Normalize separators: "/" and "," both mean list
-                    event_majors= []
-                    if "/" in event_offered:
-                        event_majors= [m.strip() for m in event_offered.replace("/", ",").split(",")]
-                    elif "," in event_offered:
-                        event_majors= [m.strip() for m in event_offered.split(",")]
-                    else:
-                        event_majors= [event_offered]
-                    
-                    # Check if filter_major is in the list
-                    major_match= filter_major in event_majors
+            # Check level match using regex parser
+            level_match= self._check_level_match(event_level, filter_level, filter_major)
+            
+            # Check major match
+            major_match= self._check_major_match(event_offered, filter_major)
 
             # BOTH must match
             if level_match and major_match:
                 filtered.append(event)
-                logger.debug(f"✓ Included: {event.get("course_code", event.get("Course Code", ""))} - Level:{event_level} Offered:{event_offered}")
+                logger.debug(f"✓ {event.get('course_code', event.get('Course Code', ''))}: L{event_level}= {filter_level}, M{event_offered} ∋ {filter_major}")
             else:
-                logger.debug(f"✗ Excluded: {event.get("course_code", event.get("Course Code", ""))} - Level:{event_level}(want:{filter_level}) Offered:{event_offered}(want:{filter_major})")
+                logger.debug(f"✗ {event.get('course_code', event.get('Course Code', ''))}: level_match= {level_match}, major_match= {major_match}")
 
-        logger.info(f"STRICT filter: {len(events)} -> {len(filtered)} events")
+        logger.info(f"STRICT regex filter: {len(events)} -> {len(filtered)} events")
         return filtered
 
     def _parse_json(self, response: str) -> List[Dict]:
         """Parse JSON from response."""
+        
         response= response.strip()
         if response.startswith("```json"):
             response= response[7:]
@@ -548,8 +614,8 @@ class PromptChat:
     def get_content(
         self, 
         page: str, 
-        is_image: bool = False, 
-        image_path: str = None
+        is_image: bool= False, 
+        image_path: str= None
     ) -> str:
         """
         Extract exam data from content.
@@ -562,6 +628,7 @@ class PromptChat:
         Returns:
             JSON string with extracted exams
         """
+        
         if is_image and image_path and os.path.exists(image_path):
             self.response= self.extraction_model.extract_from_image(image_path)
         else:
@@ -573,17 +640,24 @@ class PromptChat:
 
     def filter_results(
         self, 
-        events: List[Dict[str, Any]],
-        major_level: Optional[str] = None,
-        offered_to: Optional[str] = None
+        events: List[Dict[str, Any]], # List of the events
+        major_level: str, # REQUIRED
+        offered_to: str # REQUIRED
     ) -> List[Dict[str, Any]]:
         """
         Filter extracted events based on user criteria.
+        
+        Args:
+            events: List of events to filter
+            major_level: User's level (REQUIRED)
+            offered_to: User's major (REQUIRED)
         """
+        
         return self.filter_model.filter_events(events, major_level, offered_to)
 
-    def _save_response(self, filename: str = "Response.json"):
+    def _save_response(self, filename: str= "Response.json"):
         """Save response to file."""
+        
         if self.response:
             backend_folder= os.path.dirname(os.path.abspath(__file__))
             response_path= os.path.join(backend_folder, filename)

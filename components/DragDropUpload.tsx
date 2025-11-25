@@ -8,8 +8,6 @@ interface DragDropUploadProps {
 }
 
 // Fallback component for iOS and Android - just renders children without drag-and-drop
-export default function DragDropUpload({
-  children,
-}: DragDropUploadProps) {
+export default function DragDropUpload({ children }: DragDropUploadProps) {
   return <View style={{ flex: 1 }}>{children}</View>;
 }

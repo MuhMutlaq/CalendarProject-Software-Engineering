@@ -9,49 +9,49 @@ interface DragDropUploadProps {
 
 export default function DragDropUpload({
   onFileSelected,
-  acceptedTypes = ["application/pdf", "image/jpeg", "image/png", "image/jpg"],
+  acceptedTypes= ["application/pdf", "image/jpeg", "image/png", "image/jpg"],
   children,
 }: DragDropUploadProps) {
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDragging, setIsDragging]= useState(false);
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
+  const handleDragEnter= useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
   }, []);
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave= useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     // Only hide if we're leaving the window entirely
-    const relatedTarget = e.relatedTarget as Node;
+    const relatedTarget= e.relatedTarget as Node;
     if (!relatedTarget || relatedTarget.nodeName === "HTML") {
       setIsDragging(false);
     }
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver= useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback(
+  const handleDrop= useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
 
-      const files = Array.from(e.dataTransfer.files);
+      const files= Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        const file = files[0];
+        const file= files[0];
 
         // Check if file type is accepted
         if (acceptedTypes.length > 0) {
-          const isAccepted = acceptedTypes.some((type) => {
+          const isAccepted= acceptedTypes.some((type) => {
             if (type.endsWith("/*")) {
               // Handle wildcard types like "image/*"
-              const baseType = type.replace("/*", "");
+              const baseType= type.replace("/*", "");
               return file.type.startsWith(baseType);
             }
             return file.type === type;
@@ -127,7 +127,7 @@ export default function DragDropUpload({
   );
 }
 
-const styles = StyleSheet.create({
+const styles= StyleSheet.create({
   dropOverlay: {
     alignItems: "center",
     justifyContent: "center",

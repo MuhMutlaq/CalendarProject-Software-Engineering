@@ -1,28 +1,24 @@
 import os
+import re
 import json
-import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dateutil.parser import parse, ParserError
-from dotenv import load_dotenv
 
-# Setup logging
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "secrets", ".env"))
+
+# Setup logging for debugging
+import logging
 logging.basicConfig(level= logging.INFO)
 logger= logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), "secrets", ".env"))
-
 # Import our enhanced modules
 from model import PromptChat, ExtractionModel, FilterModel
-from image_preprocessor import (
-    ImagePreprocessor, 
-    PDFImageExtractor, # Use later.
-    preprocess_for_extraction, # Use later.
-    CV2_AVAILABLE
-)
+from image_preprocessor import ImagePreprocessor, CV2_AVAILABLE
 
 # PDF Support for text extraction
 try:
@@ -32,7 +28,7 @@ except ImportError:
     PDF_TEXT_SUPPORT= False
     logger.warning("PyPDF2 not installed. PDF text extraction will be limited.")
 
-# PDF to Image support
+# PDF to Image support ("poppler" is REQUIRED)
 try:
     from pdf2image import convert_from_path
     PDF_IMAGE_SUPPORT= True
@@ -41,7 +37,7 @@ except ImportError:
     logger.warning("pdf2image not installed. PDF image conversion not available.")
 
 # Initialize FastAPI app
-app= FastAPI(
+app = FastAPI(
     title= "Enhanced Calendar Event Extractor API",
     description= "Extract dates and events from images and PDFs with AI-powered OCR",
     version= "2.0.0"
@@ -50,18 +46,18 @@ app= FastAPI(
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins= ["*"],
+    allow_origins= ["*"], # For more security specify the origin domains
     allow_credentials= True,
     allow_methods= ["*"],
     allow_headers= ["*"],
 )
 
 # Configuration
-UPLOAD_FOLDER= "uploads"
-PROCESSED_FOLDER= "processed_images"
-PDF_PAGES_FOLDER= "pdf_pages"
-ALLOWED_IMAGE_EXTENSIONS= {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp"}
-ALLOWED_DOCUMENT_EXTENSIONS= {"pdf"}
+UPLOAD_FOLDER= 'uploads'
+PROCESSED_FOLDER= 'processed_images'
+PDF_PAGES_FOLDER= 'pdf_pages'
+ALLOWED_IMAGE_EXTENSIONS= {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'}
+ALLOWED_DOCUMENT_EXTENSIONS= {'pdf'}
 MAX_FILE_SIZE= 50 * 1024 * 1024  # 50 MB for larger documents
 
 # Ensure folders exist
@@ -86,16 +82,17 @@ else:
     logger.error("❌ GEMINI_API_KEY or GEMINI_MODEL_URL not found. AI extraction will not work.")
 
 
-def allowed_file(filename: str, file_type: str = "image") -> bool:
+def allowed_file(filename: str, file_type: str= 'image') -> bool:
     """Check if the file extension is allowed."""
-    if "." not in filename:
+    
+    if '.' not in filename:
         return False
     
-    ext= filename.rsplit(".", 1)[1].lower()
+    ext= filename.rsplit('.', 1)[1].lower()
     
-    if file_type == "image":
+    if file_type == 'image':
         return ext in ALLOWED_IMAGE_EXTENSIONS
-    elif file_type == "document":
+    elif file_type == 'document':
         return ext in ALLOWED_IMAGE_EXTENSIONS or ext in ALLOWED_DOCUMENT_EXTENSIONS
     
     return False
@@ -103,7 +100,8 @@ def allowed_file(filename: str, file_type: str = "image") -> bool:
 
 def get_file_extension(filename: str) -> str:
     """Get file extension in lowercase."""
-    return filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    
+    return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -126,20 +124,21 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def convert_pdf_to_images(pdf_path: str) -> List[str]:
     """Convert PDF pages to high-resolution images for OCR."""
+    
     if not PDF_IMAGE_SUPPORT:
         logger.warning("pdf2image not available")
         return []
     
     image_paths= []
     try:
-        # Use higher DPI (300) for better text clarity
-        images= convert_from_path(pdf_path, dpi= 300)
+        # Use higher DPI (400) for maximum text clarity and table line visibility
+        images= convert_from_path(pdf_path, dpi= 400)
         
         for i, image in enumerate(images):
             output_path= os.path.join(PDF_PAGES_FOLDER, f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i + 1}.png")
-            image.save(output_path, "PNG")
+            image.save(output_path, 'PNG')
             image_paths.append(output_path)
-            logger.info(f"Converted PDF page {i + 1} to high-res image (300 DPI)")
+            logger.info(f"Converted PDF page {i + 1} to high-res image (400 DPI)")
     
     except Exception as e:
         logger.error(f"Error converting PDF to images: {e}")
@@ -148,15 +147,16 @@ def convert_pdf_to_images(pdf_path: str) -> List[str]:
 
 
 def preprocess_image(image_path: str) -> str:
-    """Apply advanced preprocessing to improve OCR accuracy."""
+    """Apply minimal preprocessing to preserve table structure for AI vision."""
+    
     if not CV2_AVAILABLE:
         logger.warning("OpenCV not available, skipping preprocessing")
         return image_path
     
     try:
         preprocessor= ImagePreprocessor(output_dir= PROCESSED_FOLDER)
-        # Use THICK text for PDF tables - thin text gets lost in OCR
-        processed_path= preprocessor.preprocess_for_ocr_accuracy(image_path, text_thickness= "thick")
+        # MINIMAL preprocessing to preserve original table structure because Heavy binarization can destroy session boundary information
+        processed_path= preprocessor.preprocess_minimal(image_path)
         return processed_path
     except Exception as e:
         logger.error(f"Image preprocessing failed: {e}")
@@ -165,6 +165,7 @@ def preprocess_image(image_path: str) -> str:
 
 def parse_ai_response(response: str) -> List[Dict[str, Any]]:
     """Parse JSON response from AI model."""
+    
     # Clean up response
     response= response.strip()
     
@@ -201,6 +202,7 @@ def parse_ai_response(response: str) -> List[Dict[str, Any]]:
 
 def normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize event data to standard format."""
+    
     # Map different key formats to standard format
     date_keys= ["Date", "date", "exam_date", "Exam Date"]
     time_keys= ["Time", "time", "exam_time", "Exam Time"]
@@ -225,7 +227,6 @@ def normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
     
     # Clean up time format - remove extra spaces like "9 : 0 0" -> "9:00"
     if time_str:
-        import re
         # Remove spaces around colons: "9 : 00" -> "9:00"
         time_str= re.sub(r'\s*:\s*', ':', time_str)
         # Remove spaces in numbers: "9 0 0" -> "900" (unlikely but handle)
@@ -235,7 +236,7 @@ def normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
     
     # Clean up level - extract just the number(s)
     if level_str:
-        # Handle formats like "Level 5", "5", "5, 7", "5 + 7"
+        # Handle formats like "Level 5", "5", "5,7", "5+7"
         level_str= level_str.replace("Level", "").replace("level", "").strip()
         # Normalize separators
         level_str= level_str.replace("+", ",")
@@ -297,6 +298,7 @@ def extract_all_events_from_file(file_path: str, filename: str) -> List[Dict[str
     STAGE 1: Extract ALL events from file without any filtering.
     For PDFs with complex tables, prioritize image-based extraction.
     """
+    
     if not extraction_model:
         raise ValueError("AI model not initialized")
     
@@ -330,11 +332,7 @@ def extract_all_events_from_file(file_path: str, filename: str) -> List[Dict[str
                         # Skip events with no course code (likely parsing errors)
                         if normalized.get('course_code'):
                             # Avoid duplicates
-                            if not any(
-                                e['course_code'] == normalized['course_code'] and 
-                                e['date'] == normalized['date'] 
-                                for e in all_events
-                            ):
+                            if not any(e['course_code'] == normalized['course_code'] and e['date'] == normalized['date'] for e in all_events):
                                 all_events.append(normalized)
                     
                     # Clean up
@@ -358,11 +356,7 @@ def extract_all_events_from_file(file_path: str, filename: str) -> List[Dict[str
                 for event in raw_events:
                     normalized= normalize_event(event)
                     if normalized.get('course_code'):
-                        if not any(
-                            e['course_code'] == normalized['course_code'] and 
-                            e['date'] == normalized['date'] 
-                            for e in all_events
-                        ):
+                        if not any(e['course_code'] == normalized['course_code'] and e['date'] == normalized['date'] for e in all_events):
                             all_events.append(normalized)
     
     else:
@@ -399,6 +393,7 @@ def validate_and_fix_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]
     """
     Post-process events to validate data quality.
     """
+    
     valid_events= []
     
     for event in events:
@@ -434,82 +429,207 @@ def validate_and_fix_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return valid_events
 
 
+def parse_level_major_pairs(level_str: str) -> List[Tuple[str, Optional[str]]]:
+    """
+    Parse complex level formats into (level, major) pairs using regex.
+    
+    Handles formats like:
+    - "5" -> [("5", None)]
+    - "5,7" -> [("5", None), ("7", None)]
+    - "5+7" -> [("5", None), ("7", None)]
+    - "5-7" -> [("5", None), ("7", None)]
+    - "7 (AI) 9 (CS) 9(CYS)" -> [("7", "AI"), ("9", "CS"), ("9", "CYS")]
+    - "5 (CS)-7(CS)" -> [("5", "CS"), ("7", "CS")]
+    - "5 (A1)-7(ΑΙ)" -> [("5", "A1"), ("7", "AI")]
+    
+    Uses \\s* to handle 0 or more spaces between elements.
+    
+    Returns list of (level, major) tuples where major can be None
+    """
+    
+    if not level_str:
+        return []
+    
+    pairs= []
+    
+    # Pattern: digit(s) with optional (MAJOR) - flexible spacing with \s*
+    # Matches: "5", "5 (CS)", "5(CS)", "5 ( CS )", etc.
+    # Pattern breakdown:
+    # (\d+)           - capture one or more digits (the level)
+    # \s*             - zero or more whitespace
+    # (?:             - non-capturing group for optional (MAJOR)
+    #   \(\s*         - opening parenthesis with optional space
+    #   ([^)]+?)      - capture the major (any chars except closing paren, non-greedy)
+    #   \s*\)         - optional space and closing parenthesis
+    # )?              - the whole (MAJOR) part is optional
+    pattern= r'(\d+)\s*(?:\(\s*([^)]+?)\s*\))?'
+    
+    matches= re.findall(pattern, level_str)
+    
+    for match in matches:
+        level= match[0].strip()
+        major= match[1].strip().upper() if match[1] else None
+        if level: # Only add if we have a valid level
+            pairs.append((level, major))
+    
+    return pairs
+
+
+def check_level_match(event_level: str, filter_level: str, filter_major: str) -> bool:
+    """
+    Check if user's level matches the event level.
+    
+    Handles complex formats like "7 (AI) 9 (CS) 9(CYS)" where different
+    levels apply to different majors.
+    
+    Args:
+        event_level: The event's level string (e.g., "5", "5,7", "7 (AI) 9 (CS)")
+        filter_level: User's level (e.g., "5")
+        filter_major: User's major (e.g., "CS")
+    
+    Returns:
+        True if user's level matches for their major
+    """
+    
+    if not event_level or not filter_level:
+        return False
+    
+    # Parse the level string into (level, major) pairs
+    pairs= parse_level_major_pairs(event_level)
+    
+    if not pairs:
+        return False
+    
+    filter_level= filter_level.strip()
+    filter_major_upper= filter_major.strip().upper() if filter_major else None
+    
+    for level, major in pairs:
+        if level == filter_level:
+            if major:
+                # This level is specific to a major - check if it matches user's major
+                if filter_major_upper and major == filter_major_upper:
+                    return True
+            else:
+                # No associated major means this level applies to everyone
+                return True
+    
+    return False
+
+
+def check_major_match(event_offered: str, filter_major: str) -> bool:
+    """
+    Check if user's major matches the event's offered_to field.
+    
+    Handles formats like:
+    - "ALL" -> matches everyone
+    - "CS" -> matches only CS
+    - "CS/CYS" -> matches CS or CYS (split and check each)
+    - "AI,CS,CYS" -> matches AI, CS, or CYS
+    - "CS,CIS,CYS,AI" -> matches any of these
+    
+    Args:
+        event_offered: The event's offered_to string
+        filter_major: User's major
+    
+    Returns:
+        True if user's major is in the event's offered_to list
+    """
+    
+    if not filter_major:
+        return False
+    
+    if not event_offered:
+        return False  # Unknown major= exclude
+    
+    event_offered= event_offered.strip().upper()
+    filter_major= filter_major.strip().upper()
+    
+    # "ALL" means everyone
+    if event_offered == "ALL":
+        return True
+    
+    # Split by common separators: / , + - with optional spaces around them
+    # Pattern: \s*[/,+-]\s* matches separators with optional surrounding spaces
+    majors= re.split(r'\s*[/,+]\s*', event_offered)
+    majors= [m.strip() for m in majors if m.strip()]
+    
+    return filter_major in majors
+
+
 def filter_events_by_criteria(
-    events: List[Dict[str, Any]], 
-    major_level: Optional[str] = None, 
-    offered_to: Optional[str] = None
+    events: List[Dict[str, Any]], # List of the events
+    major_level: str, # REQUIRED
+    offered_to: str # REQUIRED
 ) -> List[Dict[str, Any]]:
     """
     STAGE 2: Filter events based on user criteria.
-    Uses AI-powered filtering with local fallback.
+    Uses regex-based parsing for complex level formats.
     STRICT: Both level AND major must match exactly.
+    
+    When an event has multiple levels (e.g., "5,7"), the returned event
+    will have the level normalized to the user's specific level.
+    
+    Args:
+        events: List of all extracted events
+        major_level: User's level (REQUIRED)
+        offered_to: User's major (REQUIRED)
+    
+    Returns:
+        Filtered list of events matching criteria with normalized levels
     """
+    
     if not events:
         return []
     
-    if not major_level and not offered_to:
-        logger.info("No filters provided, returning all events")
-        return events
+    if not major_level or not offered_to:
+        logger.warning("Both major_level and offered_to are REQUIRED for filtering")
+        return []
     
     logger.info(f"STAGE 2: STRICT Filtering {len(events)} events (Level: {major_level}, Major: {offered_to})")
     
-    # Try AI-powered filtering first
-    if filter_model:
-        try:
-            filtered= filter_model.filter_events(events, major_level, offered_to)
-            logger.info(f"AI filtering: {len(events)} -> {len(filtered)} events")
-            return filtered
-        except Exception as e:
-            logger.warning(f"AI filtering failed: {e}, using local filter")
-    
-    # Local STRICT filtering fallback
     filtered= []
     
-    # Normalize filter inputs once
-    filter_level= str(major_level).strip() if major_level else None
-    filter_major= str(offered_to).strip().upper() if offered_to else None
+    # Normalize filter inputs
+    filter_level= str(major_level).strip()
+    filter_major= str(offered_to).strip().upper()
     
     for event in events:
-        # Get event values and normalize
+        # Get event values
         event_level= str(event.get("major_level", "")).strip()
-        event_major= str(event.get("offered_to", "")).strip().upper()
+        event_offered= str(event.get("offered_to", "")).strip().upper()
         
-        level_match= True
-        major_match= True
+        # Check level match using regex-based parser
+        level_match= check_level_match(event_level, filter_level, filter_major)
         
-        # STRICT Level check
-        if filter_level:
-            if event_level == "":
-                level_match= False  # Unknown level = exclude
-            elif "," in event_level or "+" in event_level:
-                # Handle comma or plus separated levels like "5,7" or "5+7"
-                separator= "," if "," in event_level else "+"
-                event_levels= [l.strip() for l in event_level.split(separator)]
-                level_match= filter_level in event_levels
-            else:
-                # Exact match required
-                level_match = event_level == filter_level
-        
-        # STRICT Major check
-        if filter_major:
-            if event_major == "":
-                major_match= False  # Unknown major = exclude
-            elif event_major == "ALL":
-                major_match= True  # ALL includes everyone
-            else:
-                # Normalize separators and check
-                normalized_majors= event_major.replace("/", ",")
-                event_majors= [m.strip() for m in normalized_majors.split(",")]
-                major_match= filter_major in event_majors
+        # Check major match
+        major_match= check_major_match(event_offered, filter_major)
         
         # BOTH criteria must match
         if level_match and major_match:
-            filtered.append(event)
-            logger.debug(f"✓ {event.get('course_code')}: L{event_level}={filter_level}, M{event_major}∋{filter_major}")
+            # Create a copy of the event to avoid modifying original
+            filtered_event= event.copy()
+            
+            # Normalize the level to user's specific level (e.g., "5,7" -> "5" if user is level 5)
+            filtered_event["major_level"]= filter_level
+            
+            # Update description to reflect normalized level
+            if filtered_event.get("description"):
+                # Replace the Major-Level line in description
+                description_lines= filtered_event["description"].split("\n")
+                updated_lines= []
+                for line in description_lines:
+                    if line.startswith("Major-Level:"):
+                        updated_lines.append(f"Major-Level: {filter_level}")
+                    else:
+                        updated_lines.append(line)
+                filtered_event["description"]= "\n".join(updated_lines)
+            
+            filtered.append(filtered_event)
+            logger.debug(f"✓ {event.get('course_code')}: L{event_level} -> {filter_level}, M{event_offered} ∋ {filter_major}")
         else:
-            logger.debug(f"✗ {event.get('course_code')}: L{event_level}!={filter_level} or M{event_major}∌{filter_major}")
+            logger.debug(f"✗ {event.get('course_code')}: level_match= {level_match}, major_match= {major_match}")
     
-    logger.info(f"STRICT local filter: {len(events)} -> {len(filtered)} events")
+    logger.info(f"STRICT filter: {len(events)} -> {len(filtered)} events")
     return filtered
 
 
@@ -520,6 +640,7 @@ def filter_events_by_criteria(
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    
     return {
         "status": "healthy" if extraction_model else "degraded",
         "ai_enabled": extraction_model is not None,
@@ -534,9 +655,9 @@ async def health_check():
 
 @app.post("/extract-events")
 async def extract_events(
-    file: UploadFile = File(...),
-    major_level: Optional[str] = Form(None),
-    offered_to: Optional[str] = Form(None)
+    file: UploadFile= File(...), # REQUIRED
+    major_level: str= Form(...), # REQUIRED
+    offered_to: str= Form(...) # REQUIRED
 ):
     """
     Extract and filter events from uploaded file.
@@ -547,12 +668,20 @@ async def extract_events(
     
     Args:
         file: PDF or image file
-        major_level: Student's year/level (1, 2, 3, 4) - Optional
-        offered_to: Student's major (AI, CIS, CS, CYS, etc.) - Optional
+        major_level: Student's year/level (1-9) - REQUIRED
+        offered_to: Student's major (CS, AI, CIS, CYS, etc.) - REQUIRED
     
     Returns:
         Filtered events matching criteria
     """
+    
+    # Validate required fields
+    if not major_level or not major_level.strip():
+        raise HTTPException(status_code= 400, detail= "major_level is required")
+    
+    if not offered_to or not offered_to.strip():
+        raise HTTPException(status_code= 400, detail= "offered_to is required")
+    
     # Validate AI model
     if not extraction_model:
         raise HTTPException(status_code= 503, detail= "AI model not configured. Set GEMINI_API_KEY and GEMINI_MODEL_URL.")
@@ -618,16 +747,17 @@ async def extract_events(
         }
     
     except Exception as e:
-        logger.error(f"Error processing file: {e}", exc_info=True)
+        logger.error(f"Error processing file: {e}", exc_info= True)
         raise HTTPException(status_code= 500, detail= f"Error processing file: {str(e)}")
 
 
 @app.post("/extract-all-events")
-async def extract_all_events_endpoint(file: UploadFile = File(...)):
+async def extract_all_events_endpoint(file: UploadFile= File(...)):
     """
     Extract ALL events from file without any filtering.
     Returns complete extraction for client-side filtering.
     """
+    
     if not extraction_model:
         raise HTTPException(status_code= 503, detail= "AI model not configured")
     
@@ -667,7 +797,11 @@ async def extract_all_events_endpoint(file: UploadFile = File(...)):
                     majors.add(offered)
             
             if event.get("major_level"):
-                levels.add(str(event["major_level"]).strip())
+                level_str= str(event["major_level"]).strip()
+                # Split combined levels like "5,7" or "5+7" into individual levels
+                # Extract all digit sequences (handles "5", "5,7", "7 (AI) 9 (CS)", etc.)
+                individual_levels= re.findall(r'\d+', level_str)
+                levels.update(individual_levels)
         
         return {
             "success": True,
@@ -686,13 +820,14 @@ async def extract_all_events_endpoint(file: UploadFile = File(...)):
 @app.post("/filter-events")
 async def filter_events_endpoint(
     events: List[Dict[str, Any]],
-    major_level: Optional[str] = None,
-    offered_to: Optional[str] = None
+    major_level: Optional[str]= None,
+    offered_to: Optional[str]= None
 ):
     """
     Filter pre-extracted events by criteria.
     Useful for client-side filtering after initial extraction.
     """
+    
     filtered= filter_events_by_criteria(events, major_level, offered_to)
     
     return {
@@ -706,6 +841,7 @@ async def filter_events_endpoint(
 @app.get("/")
 async def root():
     """API information."""
+    
     return {
         "name": "Enhanced Calendar Event Extractor API",
         "version": "2.0.0",
@@ -725,6 +861,7 @@ async def root():
         }
     }
 
+
 if __name__ == '__main__':
     import uvicorn
     
@@ -734,9 +871,14 @@ if __name__ == '__main__':
     print(f"PDF Text Support: {PDF_TEXT_SUPPORT}")
     print(f"PDF Image Support: {PDF_IMAGE_SUPPORT}")
     print(f"Image Preprocessing: {CV2_AVAILABLE}")
-    print(f"AI Model: {"✅ Ready" if extraction_model else "❌ Not configured"}")
+    print(f"AI Model: {'✅ Ready' if extraction_model else '❌ Not configured'}")
     print("="*60)
     print("API Documentation: http://localhost:5000/docs")
     print("="*60 + "\n")
     
-    uvicorn.run(app, host= "localhost", port= 5000, log_level= "info")
+    uvicorn.run(
+        app,
+        host= "localhost",
+        port= 5000,
+        log_level= "info"
+    )

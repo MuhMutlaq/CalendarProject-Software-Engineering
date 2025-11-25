@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   Modal,
   View,
@@ -48,38 +48,38 @@ export default function AutoEventExtractorModal({
   onSaveEvents,
 }: AutoEventExtractorModalProps) {
   // File state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedFileUri, setSelectedFileUri] = useState<string>("");
-  const [selectedFileName, setSelectedFileName] = useState<string>("");
-  const [fileSelected, setFileSelected] = useState(false);
+  const [selectedFile, setSelectedFile]= useState<File | null>(null);
+  const [selectedFileUri, setSelectedFileUri]= useState<string>("");
+  const [selectedFileName, setSelectedFileName]= useState<string>("");
+  const [fileSelected, setFileSelected]= useState(false);
 
   // Processing state
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStage, setProcessingStage] = useState<string>("");
+  const [isProcessing, setIsProcessing]= useState(false);
+  const [processingStage, setProcessingStage]= useState<string>("");
 
   // Events state - Two stage approach
-  const [allExtractedEvents, setAllExtractedEvents] = useState<ExtractedEvent[]>([]);
-  const [filteredEvents, setFilteredEvents] = useState<ExtractedEvent[]>([]);
-  const [displayedEvents, setDisplayedEvents] = useState<ExtractedEvent[]>([]);
+  const [allExtractedEvents, setAllExtractedEvents]= useState<ExtractedEvent[]>([]);
+  const [filteredEvents, setFilteredEvents]= useState<ExtractedEvent[]>([]);
+  const [displayedEvents, setDisplayedEvents]= useState<ExtractedEvent[]>([]);
 
   // Available filter options (extracted from document)
-  const [availableMajors, setAvailableMajors] = useState<string[]>([]);
-  const [availableLevels, setAvailableLevels] = useState<string[]>([]);
+  const [availableMajors, setAvailableMajors]= useState<string[]>([]);
+  const [availableLevels, setAvailableLevels]= useState<string[]>([]);
 
   // User input filters
-  const [userMajorLevel, setUserMajorLevel] = useState<string>("");
-  const [userOfferedTo, setUserOfferedTo] = useState<string>("");
+  const [userMajorLevel, setUserMajorLevel]= useState<string>("");
+  const [userOfferedTo, setUserOfferedTo]= useState<string>("");
 
   // UI state
-  const [showUserInputs, setShowUserInputs] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editDate, setEditDate] = useState("");
+  const [showUserInputs, setShowUserInputs]= useState(true);
+  const [showFilters, setShowFilters]= useState(false);
+  const [editingEventId, setEditingEventId]= useState<string | null>(null);
+  const [editTitle, setEditTitle]= useState("");
+  const [editDescription, setEditDescription]= useState("");
+  const [editDate, setEditDate]= useState("");
 
   // Backend URL configuration
-  const BACKEND_URL = Platform.select({
+  const BACKEND_URL= Platform.select({
     android: "http://10.0.2.2:5000",
     ios: "http://localhost:5000",
     default: "http://localhost:5000",
@@ -89,11 +89,11 @@ export default function AutoEventExtractorModal({
   // BACKEND API FUNCTIONS
   // =============================================================================
 
-  /**
+  /*
    * Stage 1 & 2: Extract and filter events from backend
    * Backend handles both extraction and filtering in one call
    */
-  const extractAndFilterEvents = async (
+  const extractAndFilterEvents= async (
     fileUri: string,
     fileName: string,
     fileBlob?: Blob
@@ -102,11 +102,11 @@ export default function AutoEventExtractorModal({
     setProcessingStage("Uploading file...");
 
     try {
-      const formData = new FormData();
+      const formData= new FormData();
 
       // Prepare file for upload
-      const fileType = fileName.split(".").pop()?.toLowerCase();
-      const mimeType = fileType === "pdf" ? "application/pdf" : `image/${fileType}`;
+      const fileType= fileName.split(".").pop()?.toLowerCase();
+      const mimeType= fileType === "pdf" ? "application/pdf" : `image/${fileType}`;
 
       if (fileBlob) {
         // Web: Use File object directly
@@ -129,25 +129,25 @@ export default function AutoEventExtractorModal({
 
       setProcessingStage("Extracting events with AI...");
 
-      const response = await fetch(`${BACKEND_URL}/extract-events`, {
+      const response= await fetch(`${BACKEND_URL}/extract-events`, {
         method: "POST",
         body: formData,
         headers: Platform.OS === "web" ? {} : { "Content-Type": "multipart/form-data" },
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText= await response.text();
         throw new Error(`Server error ${response.status}: ${errorText}`);
       }
 
-      const data = await response.json();
+      const data= await response.json();
       console.log("✅ Backend response:", data);
 
       if (data.success && data.events && data.events.length > 0) {
         setProcessingStage("Processing results...");
 
         // Convert to our event format with unique IDs
-        const events: ExtractedEvent[] = data.events.map(
+        const events: ExtractedEvent[]= data.events.map(
           (event: any, index: number) => ({
             id: `event-${Date.now()}-${index}`,
             date: event.date || "",
@@ -168,8 +168,8 @@ export default function AutoEventExtractorModal({
         setDisplayedEvents(events);
 
         // Extract available filter options from events
-        const majors = new Set<string>();
-        const levels = new Set<string>();
+        const majors= new Set<string>();
+        const levels= new Set<string>();
 
         events.forEach((event) => {
           if (event.offered_to) {
@@ -208,10 +208,10 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  /**
+  /*
    * Client-side filtering of already extracted events
    */
-  const applyClientSideFilter = useCallback(
+  const applyClientSideFilter= useCallback(
     (level: string, major: string) => {
       if (allExtractedEvents.length === 0) return;
 
@@ -219,17 +219,17 @@ export default function AutoEventExtractorModal({
 
       // Filter by level
       if (level && level !== "All") {
-        filtered = filtered.filter((event) => {
-          const eventLevel = (event.major_level || "").trim();
+        filtered= filtered.filter((event) => {
+          const eventLevel= (event.major_level || "").trim();
           return eventLevel === level || eventLevel === "";
         });
       }
 
       // Filter by major
       if (major && major !== "All") {
-        const majorUpper = major.toUpperCase();
-        filtered = filtered.filter((event) => {
-          const offered = (event.offered_to || "").toUpperCase();
+        const majorUpper= major.toUpperCase();
+        filtered= filtered.filter((event) => {
+          const offered= (event.offered_to || "").toUpperCase();
           if (offered === "" || offered === "ALL") return true;
           if (offered.includes(",")) {
             return offered.split(",").some((m) => m.trim() === majorUpper);
@@ -249,7 +249,7 @@ export default function AutoEventExtractorModal({
   // FILE HANDLING
   // =============================================================================
 
-  const handleWebFileSelected = async (file: File) => {
+  const handleWebFileSelected= async (file: File) => {
     console.log("📁 File dropped:", file.name, file.type, file.size);
     setSelectedFile(file);
     setSelectedFileUri(URL.createObjectURL(file));
@@ -257,9 +257,9 @@ export default function AutoEventExtractorModal({
     setFileSelected(true);
   };
 
-  const handleFileUpload = async () => {
+  const handleFileUpload= async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
+      const result= await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
         copyToCacheDirectory: true,
       });
@@ -276,16 +276,16 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  const handlePhotoUpload = async () => {
+  const handlePhotoUpload= async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permissionResult= await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permissionResult.granted) {
         showAlert("Permission Required", "Photo library permission is needed to select images.");
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const result= await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 1,
@@ -293,8 +293,8 @@ export default function AutoEventExtractorModal({
 
       if (result.canceled) return;
 
-      const image = result.assets[0];
-      const fileName = `photo_${Date.now()}.jpg`;
+      const image= result.assets[0];
+      const fileName= `photo_${Date.now()}.jpg`;
       setSelectedFileUri(image.uri);
       setSelectedFileName(fileName);
       setFileSelected(true);
@@ -304,16 +304,16 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  const handleCameraCapture = async () => {
+  const handleCameraCapture= async () => {
     try {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      const permissionResult= await ImagePicker.requestCameraPermissionsAsync();
 
       if (!permissionResult.granted) {
         showAlert("Permission Required", "Camera permission is needed to take photos.");
         return;
       }
 
-      const result = await ImagePicker.launchCameraAsync({
+      const result= await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 1,
@@ -321,8 +321,8 @@ export default function AutoEventExtractorModal({
 
       if (result.canceled) return;
 
-      const image = result.assets[0];
-      const fileName = `camera_${Date.now()}.jpg`;
+      const image= result.assets[0];
+      const fileName= `camera_${Date.now()}.jpg`;
       setSelectedFileUri(image.uri);
       setSelectedFileName(fileName);
       setFileSelected(true);
@@ -332,9 +332,19 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit= async () => {
     if (!fileSelected || !selectedFileName) {
       showAlert("Error", "Please select a file first.");
+      return;
+    }
+
+    if (!userMajorLevel.trim()) {
+      showAlert("Required Field", "Please enter your level (1-9).");
+      return;
+    }
+
+    if (!userOfferedTo.trim()) {
+      showAlert("Required Field", "Please enter your major (e.g., CS, AI, CIS, CYS).");
       return;
     }
 
@@ -345,7 +355,7 @@ export default function AutoEventExtractorModal({
     );
   };
 
-  const clearFileSelection = () => {
+  const clearFileSelection= () => {
     setFileSelected(false);
     setSelectedFile(null);
     setSelectedFileUri("");
@@ -356,17 +366,17 @@ export default function AutoEventExtractorModal({
   // EVENT EDITING
   // =============================================================================
 
-  const handleEditEvent = (event: ExtractedEvent) => {
+  const handleEditEvent= (event: ExtractedEvent) => {
     setEditingEventId(event.id);
     setEditTitle(event.title);
     setEditDescription(event.description);
     setEditDate(event.date);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit= () => {
     if (!editingEventId) return;
 
-    const updateEvents = (events: ExtractedEvent[]) =>
+    const updateEvents= (events: ExtractedEvent[]) =>
       events.map((event) =>
         event.id === editingEventId
           ? { ...event, title: editTitle, description: editDescription, date: editDate }
@@ -383,16 +393,16 @@ export default function AutoEventExtractorModal({
     setEditDate("");
   };
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit= () => {
     setEditingEventId(null);
     setEditTitle("");
     setEditDescription("");
     setEditDate("");
   };
 
-  const handleDeleteEvent = (eventId: string) => {
-    const confirmDelete = () => {
-      const removeEvent = (events: ExtractedEvent[]) =>
+  const handleDeleteEvent= (eventId: string) => {
+    const confirmDelete= () => {
+      const removeEvent= (events: ExtractedEvent[]) =>
         events.filter((event) => event.id !== eventId);
 
       setAllExtractedEvents((prev) => removeEvent(prev));
@@ -416,14 +426,14 @@ export default function AutoEventExtractorModal({
   // SAVE & CLOSE
   // =============================================================================
 
-  const handleSaveAllEvents = async () => {
+  const handleSaveAllEvents= async () => {
     if (displayedEvents.length === 0) {
       showAlert("No Events", "There are no events to save.");
       return;
     }
 
     try {
-      const eventsToSave = displayedEvents.map(({ id, ...event }) => event);
+      const eventsToSave= displayedEvents.map(({ id, ...event }) => event);
       await onSaveEvents(eventsToSave);
 
       showAlert(
@@ -437,7 +447,7 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  const handleClose = () => {
+  const handleClose= () => {
     // Reset all state
     setAllExtractedEvents([]);
     setFilteredEvents([]);
@@ -462,7 +472,7 @@ export default function AutoEventExtractorModal({
   // UTILITIES
   // =============================================================================
 
-  const showAlert = (title: string, message: string, onOk?: () => void) => {
+  const showAlert= (title: string, message: string, onOk?: () => void) => {
     if (Platform.OS === "web") {
       alert(`${title}\n\n${message}`);
       onOk?.();
@@ -471,10 +481,10 @@ export default function AutoEventExtractorModal({
     }
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDate= (dateStr: string) => {
     if (!dateStr) return "No date";
     try {
-      const date = new Date(dateStr);
+      const date= new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
       return date.toLocaleDateString("en-US", {
         weekday: "short",
@@ -564,46 +574,55 @@ export default function AutoEventExtractorModal({
                     )}
                   </View>
 
-                  {/* Step 2: Filter Options (Optional) */}
+                  {/* Step 2: Filter Options (Required) */}
                   {fileSelected && (
                     <View style={styles.stepContainer}>
-                      <Text style={styles.stepTitle}>Step 2: Your Info (Optional)</Text>
+                      <Text style={styles.stepTitle}>Step 2: Your Info (Required)</Text>
                       <Text style={styles.stepDescription}>
-                        Filter to show only your relevant exams, or leave empty for all
+                        Enter your level and major to extract your exams
                       </Text>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Your Level (1-4)</Text>
+                        <Text style={styles.inputLabel}>Your Level (1-9) <Text style={styles.requiredStar}>*</Text></Text>
                         <TextInput
-                          style={styles.input}
+                          style={[styles.input, !userMajorLevel && styles.inputRequired]}
                           value={userMajorLevel}
                           onChangeText={setUserMajorLevel}
-                          placeholder="e.g., 1, 2, 3, or 4"
+                          placeholder="Enter your level (e.g., 3, 5, 7, 9)"
                           keyboardType="number-pad"
                           maxLength={1}
                         />
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Your Major</Text>
+                        <Text style={styles.inputLabel}>Your Major <Text style={styles.requiredStar}>*</Text></Text>
                         <TextInput
-                          style={styles.input}
+                          style={[styles.input, !userOfferedTo && styles.inputRequired]}
                           value={userOfferedTo}
                           onChangeText={setUserOfferedTo}
-                          placeholder="e.g., CS, SE, AI, CIS, CYS"
+                          placeholder="Enter your major (e.g., CS, AI, CIS, CYS)"
                           autoCapitalize="characters"
                         />
                       </View>
 
                       <TouchableOpacity
-                        style={styles.submitButton}
+                        style={[
+                          styles.submitButton,
+                          (!userMajorLevel || !userOfferedTo) && styles.submitButtonDisabled
+                        ]}
                         onPress={handleSubmit}
-                        disabled={isProcessing}
+                        disabled={isProcessing || !userMajorLevel || !userOfferedTo}
                       >
                         <Text style={styles.submitButtonText}>
                           🚀 Extract Events
                         </Text>
                       </TouchableOpacity>
+
+                      {(!userMajorLevel || !userOfferedTo) && (
+                        <Text style={styles.requiredNote}>
+                          * Please fill in both fields to continue
+                        </Text>
+                      )}
                     </View>
                   )}
                 </View>
@@ -822,7 +841,7 @@ export default function AutoEventExtractorModal({
 // STYLES
 // =============================================================================
 
-const styles = StyleSheet.create({
+const styles= StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -971,6 +990,14 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 16,
   },
+  inputRequired: {
+    borderColor: "#FF9500",
+    borderWidth: 2,
+  },
+  requiredStar: {
+    color: "#FF3B30",
+    fontWeight: "700",
+  },
   submitButton: {
     backgroundColor: "#007AFF",
     padding: 18,
@@ -978,10 +1005,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
+  submitButtonDisabled: {
+    backgroundColor: "#ccc",
+  },
   submitButtonText: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "700",
+  },
+  requiredNote: {
+    color: "#FF9500",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 12,
   },
 
   // Processing
