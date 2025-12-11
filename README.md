@@ -501,3 +501,40 @@ This project is private and proprietary.
 
 For issues, questions, or contributions, please contact the development team.
 Github: [text](https://github.com/MuhMutlaq/CalendarProject-Software-Engineering)
+
+----
+## Contributors
+
+<a href="https://github.com/BoMaNa3">
+  <img src="https://github.com/BoMaNa3.png" width="50" />
+</a>
+
+<a href="https://github.com/AbdulrahmanAlshaikh5">
+  <img src="https://github.com/AbdulrahmanAlshaikh5.png" width="50" />
+</a>
+
+<a href="https://github.com/m9hdi9">
+  <img src="https://github.com/m9hdi9.png" width="50" />
+</a>
+
+<a href="https://github.com/azkh81">
+  <img src="https://github.com/azkh81.png" width="50" />
+</a>
+
+<a href="https://github.com/MohammedHalawani">
+  <img src="https://github.com/MohammedHalawani.png" width="50" />
+</a>
+
+<a href="https://github.com/MuhMutlaq">
+  <img src="https://github.com/MuhMutlaq.png" width="50" />
+  <p></p>
+</a>
+
+* Maan Alghamdi
+* Abdulrahman Alshaikh
+* Mohammed Alhadi
+* Abdulaziz Alhassan
+* Mohammed Halawani
+* Muhannad Almutlaq
+
+----
